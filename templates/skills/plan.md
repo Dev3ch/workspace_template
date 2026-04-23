@@ -1,4 +1,4 @@
-# /planning
+# /plan
 
 Planifica y crea issues en GitHub — features nuevas, epics, o descompone un epic en sub-issues.
 
@@ -90,3 +90,10 @@ Listar todos los issues creados con sus URLs y el plan de implementación ordena
 - Los criterios de aceptación deben ser verificables (checkbox).
 - Siempre especificar qué repos afecta cada issue.
 - Priorizar: ¿qué bloquea a qué?
+
+## Siguiente paso
+
+- **Issue creado y es el siguiente a trabajar** → `/apply` (implementar)
+- **Plan afecta múltiples repos** → `/cross` (coordinar cambios cross-repo)
+- **Trabajan otros devs y puede haber drift** → `/sync` antes de `/apply`
+- **Epic grande con sub-issues** → `/apply` por cada sub-issue en orden de dependencias

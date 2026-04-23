@@ -1,4 +1,4 @@
-# /code-review
+# /review
 
 Revisa código con perspectiva fresca. Ideal para revisar PRs o validar implementaciones.
 
@@ -70,6 +70,13 @@ Listar findings por severidad:
 - **Sugerencia:** opcional, cosmético.
 
 Si todo está bien: aprobar con un resumen de lo revisado.
+
+## Siguiente paso
+
+- **Todo verde, listo para mergear a dev** → merge → `/init` en próxima sesión
+- **Bloqueantes detectados** → `/apply` (o `/debug`) para corregirlos → volver a `/review`
+- **Cambio toca autenticación, pagos o datos sensibles** → `/audit` antes del merge
+- **Rama va directo a main** → `/secure` + `/deploy` tras el merge
 
 ## Notas
 

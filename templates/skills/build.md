@@ -1,4 +1,4 @@
-# /progress-tracker
+# /build
 
 Guarda el progreso de la sesión en GitHub y hace push del trabajo.
 
@@ -68,6 +68,13 @@ Si el issue está listo para review:
 # Mover issue a "In Review" en el project board
 gh issue edit <N> --add-label "review"
 ```
+
+## Siguiente paso
+
+- **Feature completa, PR listo para revisar** → `/review`
+- **Feature completa y va a main/staging** → `/secure` (pre-deploy) → `/deploy`
+- **Trabajo en progreso, continuar mañana** → `/init` en la próxima sesión
+- **Trabajo afecta otros repos del workspace** → `/cross` para coordinar
 
 ## Notas
 

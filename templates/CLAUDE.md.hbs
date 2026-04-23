@@ -119,14 +119,35 @@ Todo contexto de proyecto vive en GitHub. Cero contexto local.
 |---|---|
 | Estado de una feature en curso | Issue de GitHub (comments para progreso) |
 | Plan de un epic | Body del issue padre + sub-issues |
-| Progreso de sesión | Comment en el issue activo (vía `/progress-tracker`) |
+| Progreso de sesión | Comment en el issue activo (vía `/build`) |
 | Convenciones del repo | `CLAUDE.md` + `.claude/rules/` (commiteados) |
 | Convenciones cross-repo | Este archivo (commiteado en workspace raíz) |
 | Preferencias personales | `CLAUDE.local.md` |
 
+## Flujo estándar de trabajo
+
+```
+Desarrollo:
+  /init → /plan → /apply → /test → /build → /review
+
+Deploy:
+  /secure → /deploy
+
+Soporte:
+  /debug    — cuando /apply o /test fallan
+  /audit    — revisión OWASP profunda antes de mergear cambios sensibles
+  /pentest  — barrida completa de seguridad sobre todo el proyecto (periódico)
+  /sync     — cuando hay drift entre código y GitHub
+  /rollback — cuando un deploy rompe producción
+  /design   — cuando hay trabajo de UI/UX
+  /triage   — limpieza periódica de issues
+  /cross    — cambios que afectan múltiples repos
+```
+
 **Reglas operativas para Claude:**
 
-1. Al arrancar sesión: `/session-start` lee issues/PRs activos desde GitHub.
-2. Al cerrar sesión: `/progress-tracker` escribe comment en el issue + push.
-3. Si aparece un aprendizaje que debe persistir: commitearlo al `CLAUDE.md` del repo correspondiente.
-4. Si aparece un plan que debe sobrevivir la sesión: pegarlo en el body del issue o crear issue nuevo.
+1. Al arrancar sesión: `/init` lee issues/PRs activos desde GitHub.
+2. Al cerrar sesión: `/build` escribe comment en el issue + push.
+3. Antes de cada deploy: `/secure` es obligatorio — no omitir.
+4. Si el plan en GitHub no refleja el código: correr `/sync` antes de continuar.
+5. Si aparece un aprendizaje que debe persistir: commitearlo al `CLAUDE.md` del repo correspondiente.

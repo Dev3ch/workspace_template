@@ -1,4 +1,4 @@
-# Skill: triage
+# /triage
 
 Analyze a PR or epic against its issues, update acceptance criteria coverage, close covered issues, and move board statuses in bulk.
 
@@ -32,3 +32,10 @@ Analyze a PR or epic against its issues, update acceptance criteria coverage, cl
 - Summary table: issue | status (closed / partial / open) | covered by
 - List of board moves performed
 - List of uncovered acceptance criteria with the issue that tracks them
+
+## Siguiente paso
+
+- **Backlog limpio, criterios pendientes identificados** → `/plan` para crear issues de lo que falta
+- **Epic completado** → cerrar el epic y celebrar 🎉
+- **Hallazgos de drift entre código e issues** → `/sync` para reconciliar
+- **Listo para siguiente sprint** → `/init` con el backlog limpio

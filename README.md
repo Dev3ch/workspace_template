@@ -1,20 +1,34 @@
-# force-template
+# workspace-template
 
 Configura un workspace de Claude Code para cualquier proyecto — single-repo o multi-repo — con integración completa de GitHub, selección de skills, reglas de trabajo y MCP tools.
 
 ## Inicio rápido
 
+**Si no tienes Node.js instalado todavía:**
+
 ```bash
-git clone https://github.com/<owner>/force-template
-cd force-template
-npm install
-node bin/force.js
+curl -fsSL https://raw.githubusercontent.com/Dev3ch/workspace_template/main/setup.sh | bash
 ```
 
-O con el script bash:
+El script verifica tu entorno, instala las dependencias necesarias y lanza el CLI automáticamente.
+
+**Si ya tienes Node.js:**
 
 ```bash
-./setup.sh
+npx workspace-template
+```
+
+Sin clonar nada, sin pasos previos.
+
+---
+
+**Instalación manual (opcional):**
+
+```bash
+git clone https://github.com/Dev3ch/workspace_template
+cd workspace_template
+npm install
+node bin/workspace-template.js
 ```
 
 ## Flujo del CLI
@@ -36,7 +50,11 @@ El CLI te guía paso a paso. Todo en español.
    multi-repo   →  varios repos agrupados en una carpeta workspace
 
 4. Repos
-   Single-repo  → ruta local o URL (clona si hace falta)
+   Single-repo  → tres caminos:
+                  · Ya tengo repo en GitHub  → clona (o reutiliza si ya existe local)
+                  · Ya tengo carpeta local   → usa tal cual, detecta remote si existe
+                  · Empiezo desde cero       → crea carpeta, clona template del stack,
+                                               crea repo en GitHub y hace primer push
    Multi-repo   → pega TODAS las URLs / rutas de una vez (una por línea)
                   Detecta owner/repo desde el remote origin
                   Clona los que aún no están locales
@@ -61,6 +79,31 @@ El CLI te guía paso a paso. Todo en español.
 9. Resumen
    Árbol de todo lo generado + próximos pasos
 ```
+
+## Actualizar un workspace existente
+
+Cuando salga una nueva versión de `workspace-template` con skills nuevos o mejoras, puedes traer los cambios sin perder tu configuración personalizada:
+
+```bash
+# Desde la raíz del workspace
+npx workspace-template update
+
+# O especificando un path
+npx workspace-template update /ruta/al/workspace
+```
+
+Qué hace:
+
+1. Lee la versión instalada desde `.claude/.workspace-version`.
+2. Compara hash por hash tus skills y rules contra los del paquete más reciente.
+3. Clasifica los cambios:
+   - **`+` nuevo** — skills que no tenías (aparece checkeado por defecto)
+   - **`~` actualizado** — cambió upstream sin que tú lo modificaras (checkeado)
+   - **`!` personalizado** — tú lo modificaste localmente (NO checkeado — confirma antes de sobrescribir)
+4. Te deja elegir qué aplicar con checkboxes.
+5. Commitea los cambios en tu repo con un mensaje estándar.
+
+Tus personalizaciones siempre se respetan salvo que las selecciones manualmente.
 
 ## Multi-repo: entrada en batch
 
@@ -120,24 +163,48 @@ El paso 8 te ofrece 4 caminos para enlazar el workspace con un tablero de issues
 
 En **multi-repo**, esta estructura se genera tanto en la raíz del workspace como dentro de cada repo (cada repo es autosuficiente con su propio `CLAUDE.md` y `.claude/`).
 
-## Skills disponibles
+## Comandos disponibles
 
-| Skill | Cuándo usarlo |
+Todos los comandos son skills de Claude Code invocables con `/comando`.
+
+### Flujo principal
+
+| Comando | Qué hace |
 |---|---|
-| `session-start` | Al inicio de cada sesión: revisa issues activos y estado del repo |
-| `progress-tracker` | Al cerrar sesión: commit + push + comenta progreso en el issue |
-| `planning` | Para crear issues, epics y sub-issues en GitHub Projects |
-| `code-review` | Para revisar PRs con perspectiva fresca |
-| `cross-repo` | Cuando un cambio afecta múltiples repos a la vez |
-| `triage` | Para cerrar issues cubiertos y mover estados en bulk |
-| `security-review` | Revisión de seguridad OWASP de los cambios pendientes |
-| `ui-ux` | Diseño UI/UX: estilos, componentes, accesibilidad |
-| `repo-setup` | Para configurar un repo individual de forma autónoma |
+| `/init` | Orienta: lee estado del repo, issues activos y rama actual |
+| `/plan` | Planifica: crea issues, epics y sub-issues en GitHub |
+| `/apply` | Ejecuta: toma el issue activo, implementa el código y corre tests |
+| `/test` | Verifica: corre el suite completo, reporta cobertura e identifica huecos |
+| `/build` | Guarda: commit + push + comenta progreso en el issue |
+| `/review` | Revisa: code review del PR con perspectiva fresca |
+| `/secure` | Valida: pre-deploy checklist (env vars, secrets, deps, Dockerfile) |
+| `/deploy` | Publica: genera Dockerfile, GitHub Actions y `.env.example` |
 
-Para agregar un skill propio después del setup:
+```
+/init → /plan → /apply → /test → /build → /review → /secure → /deploy
+                   ↑                          ↑
+                /debug                      /sync
+           (si algo falla)           (si el plan derivó)
+```
+
+### Comandos de soporte
+
+| Comando | Qué hace |
+|---|---|
+| `/debug` | Analiza un error o log, identifica la causa raíz y aplica el fix |
+| `/audit` | Revisión de seguridad profunda del código (OWASP Top 10, auth, lógica sensible) |
+| `/pentest` | Barrida completa de seguridad sobre todo el proyecto (secrets, CVEs, endpoints, infra) |
+| `/sync` | Detecta drift entre el código real y el plan en GitHub, reconcilia issues |
+| `/rollback` | Revierte el último deploy de forma segura y crea issue de post-mortem |
+| `/design` | UI/UX: estilos, componentes, paletas, accesibilidad |
+| `/triage` | Limpieza: cierra issues cubiertos y mueve estados en bulk |
+| `/cross` | Multi-repo: coordina cambios que afectan varios repos a la vez |
+| `/setup` | Refresh: regenera `CLAUDE.md` y config de un repo individual |
+
+### Agregar un comando propio
 
 1. Crea `.claude/skills/<nombre>.md` en el workspace
-2. El archivo debe empezar con `# Skill: <nombre>` y describir cuándo invocarlo y qué pasos seguir
+2. El archivo debe empezar con `# /<nombre>` y describir cuándo invocarlo y qué pasos seguir
 3. Claude Code lo reconoce automáticamente como `/<nombre>`
 
 ## Integraciones MCP
@@ -151,20 +218,50 @@ MCP (Model Context Protocol) conecta a Claude con herramientas externas directam
 | Slack | `SLACK_BOT_TOKEN`, `SLACK_TEAM_ID` |
 | Sentry | `SENTRY_AUTH_TOKEN` |
 | Postgres | `DATABASE_URL` |
+| Context7 | — (sin credenciales, inyecta docs de SDKs actualizadas) |
+| n8n | `N8N_API_KEY`, `N8N_BASE_URL` |
 
 La configuración queda en `.claude/settings.json` bajo `mcpServers`. Para agregar más integraciones después, edita ese archivo.
 
 ## Stacks soportados
 
-| Stack | Regla generada |
-|---|---|
-| Next.js / React | `typescript.md` |
-| Vue / Nuxt | `typescript.md` |
-| Django | `python-django.md` |
-| FastAPI | `python-fastapi.md` |
-| React Native | `typescript.md` |
-| Flutter | genérica |
-| Otro (texto libre) | genérica |
+| Stack | Regla generada | Template oficial |
+|---|---|---|
+| Next.js / React | `typescript.md` | [Dev3ch/react_template](https://github.com/Dev3ch/react_template) |
+| Vue / Nuxt | `typescript.md` | — |
+| Django | `python-django.md` | [Dev3ch/django_template](https://github.com/Dev3ch/django_template) |
+| FastAPI | `python-fastapi.md` | — |
+| React Native | `typescript.md` | [Dev3ch/react_template](https://github.com/Dev3ch/react_template) |
+| Flutter | `flutter.md` | [Dev3ch/flutter_template](https://github.com/Dev3ch/flutter_template) |
+| Go | `go.md` | [Dev3ch/go_template](https://github.com/Dev3ch/go_template) |
+| Otro (texto libre) | genérica | — |
+
+Cuando eliges **"Empiezo desde cero"**, el CLI clona automáticamente el template oficial del stack seleccionado, desconecta el remote original y crea un nuevo repo en GitHub a tu nombre.
+
+## Herramientas opcionales recomendadas
+
+Estas herramientas no son instaladas por el CLI pero potencian el workflow con Claude Code:
+
+### MCPs adicionales
+
+| MCP | Para qué | Configuración |
+|---|---|---|
+| `n8n-mcp` | Crear y gestionar workflows N8N desde Claude Code | `.mcp.json` |
+| `context7` | Docs actualizadas de SDKs inyectadas en el prompt | `npx ctx7 setup` |
+
+### Librerías globales
+
+| Librería | Para qué | Instalación |
+|---|---|---|
+| `@playwright/cli` | Automatización de navegador (formularios, portales, dashboards) | `npm install -g @playwright/cli@latest` |
+| `@railway/cli` | Deploy a Railway desde terminal | `npm install -g @railway/cli` |
+| `flyctl` | Deploy a Fly.io desde terminal | `curl -L https://fly.io/install.sh \| sh` |
+
+### Skills de la comunidad
+
+| Skill | Para qué | Fuente |
+|---|---|---|
+| `ui-ux-pro-max` | 50+ estilos, 161 paletas, 57 font pairings para UI/UX | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) |
 
 ## GitHub auth
 
@@ -194,3 +291,7 @@ Si no tienes `gh` autenticado, el CLI te explica:
 - `gh` (GitHub CLI) instalado y autenticado
 
 El CLI detecta automáticamente si alguno falta y te muestra cómo instalarlo.
+
+## Historial de cambios
+
+Ver [CHANGELOG.md](CHANGELOG.md) para el detalle de cada versión.

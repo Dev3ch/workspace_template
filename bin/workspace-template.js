@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * force-template — CLI para configurar un workspace de Claude Code
- * Uso: node bin/force.js  |  npx force-template  |  ./setup.sh
+ * workspace-template — CLI para configurar un workspace de Claude Code
+ * Uso: node bin/workspace-template.js  |  npx workspace-template  |  ./setup.sh
  */
 
 import path from 'path';
@@ -38,6 +38,7 @@ import {
   printGeneratedTree,
 } from '../lib/workspace-gen.js';
 import { askMcpIntegrations, mergeMcpConfig } from '../lib/mcp-tools.js';
+import { runUpdate, getCurrentPackageVersion } from '../lib/updater.js';
 
 // ──────────────────────────────────────────────────────────────
 // HELPERS
@@ -50,13 +51,25 @@ async function pressEnter(msg = 'Presiona Enter para continuar...') {
 
 /** Mapeo de valor de stack a label legible */
 const STACK_LABELS = {
-  nextjs: 'Next.js / React',
-  vue: 'Vue / Nuxt',
-  django: 'Django / Python',
-  fastapi: 'FastAPI / Python',
+  nextjs:         'Next.js / React',
+  vue:            'Vue / Nuxt',
+  django:         'Django / Python',
+  fastapi:        'FastAPI / Python',
   'react-native': 'React Native',
-  flutter: 'Flutter',
-  other: 'Otro (texto libre)',
+  flutter:        'Flutter',
+  go:             'Go',
+  other:          'Otro (texto libre)',
+};
+
+/** Templates oficiales de Dev3ch por stack (clonados cuando se inicia desde cero) */
+const STACK_TEMPLATES = {
+  nextjs:  'https://github.com/Dev3ch/react_template',
+  vue:     null,
+  django:  'https://github.com/Dev3ch/django_template',
+  fastapi: null,
+  'react-native': 'https://github.com/Dev3ch/react_template',
+  flutter: 'https://github.com/Dev3ch/flutter_template',
+  go:      'https://github.com/Dev3ch/go_template',
 };
 
 /** Elige uno o varios stacks para un repo */
@@ -212,38 +225,20 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
     default: `Plataforma ${projectName}`,
   });
 
-  const alreadyCloned = await confirm({
-    message: '¿El repositorio ya está clonado localmente?',
-    default: true,
+  const repoOrigin = await select({
+    message: '¿Cómo está tu proyecto?',
+    choices: [
+      { name: 'Ya tengo repo en GitHub (o SSH)',       value: 'github' },
+      { name: 'Ya tengo carpeta local (sin GitHub)',    value: 'local' },
+      { name: 'Empiezo desde cero',                     value: 'scratch' },
+    ],
   });
 
   let repoPath;
   let owner;
   let repoName;
 
-  if (alreadyCloned) {
-    repoPath = await input({
-      message: 'Ruta local del repositorio (absoluta):',
-      validate: (v) => {
-        const p = v.trim();
-        return (p.length > 0 && fs.existsSync(p)) || `La ruta no existe: ${p}`;
-      },
-    });
-    repoPath = path.resolve(repoPath.trim());
-
-    // Intentar obtener owner/repo del remote
-    const remoteUrl = await getRemoteOrigin(repoPath);
-    if (remoteUrl) {
-      try {
-        const parsed = parseGithubUrl(remoteUrl);
-        owner = parsed.owner;
-        repoName = parsed.repo;
-        console.log(chalk.gray(`  → Detectado: ${owner}/${repoName}`));
-      } catch {
-        // no detectado
-      }
-    }
-  } else {
+  if (repoOrigin === 'github') {
     const repoUrl = await input({
       message: 'URL del repositorio GitHub (HTTPS o SSH):',
       validate: (v) => v.trim().length > 0 || 'La URL no puede estar vacía',
@@ -259,9 +254,111 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
       owner = parsed.owner;
       repoName = parsed.repo;
       repoPath = path.join(path.resolve(destParent.trim()), repoName);
-      await cloneRepo(repoUrl.trim(), repoPath);
+      if (fs.existsSync(repoPath)) {
+        console.log(chalk.gray(`  → Ya existe localmente en ${repoPath} — se usa tal cual`));
+      } else {
+        await cloneRepo(repoUrl.trim(), repoPath);
+      }
     } catch (err) {
       console.log(chalk.red(`✗ ${err.message}`));
+      process.exit(1);
+    }
+
+  } else if (repoOrigin === 'local') {
+    repoPath = await input({
+      message: 'Ruta local del repositorio (absoluta):',
+      validate: (v) => {
+        const p = v.trim();
+        return (p.length > 0 && fs.existsSync(p)) || `La ruta no existe: ${p}`;
+      },
+    });
+    repoPath = path.resolve(repoPath.trim());
+
+    const remoteUrl = await getRemoteOrigin(repoPath);
+    if (remoteUrl) {
+      try {
+        const parsed = parseGithubUrl(remoteUrl);
+        owner = parsed.owner;
+        repoName = parsed.repo;
+        console.log(chalk.gray(`  → Detectado: ${owner}/${repoName}`));
+      } catch {
+        // sin remote github — se pide después
+      }
+    }
+
+  } else {
+    // desde cero
+    const destParent = await input({
+      message: 'Directorio donde crear el proyecto:',
+      default: process.cwd(),
+      validate: (v) => fs.existsSync(path.resolve(v.trim())) || `No existe: ${v}`,
+    });
+
+    owner = await input({
+      message: 'GitHub owner o org (para crear el repo):',
+      default: ghUser ?? '',
+      validate: (v) => v.trim().length > 0 || 'Requerido',
+    });
+
+    repoName = projectName.trim().toLowerCase().replace(/\s+/g, '-');
+    repoPath = path.join(path.resolve(destParent.trim()), repoName);
+
+    // Elegir stack antes para saber si hay template
+    const stacks = await askStacks(repoName);
+    const primaryStack = stacks[0];
+    const templateUrl = STACK_TEMPLATES[primaryStack] ?? null;
+
+    const spinnerInit = ora('Inicializando proyecto...').start();
+    try {
+      if (templateUrl) {
+        // Clonar template y desconectar del remote original
+        await execa('git', ['clone', templateUrl, repoPath]);
+        await execa('git', ['remote', 'remove', 'origin'], { cwd: repoPath });
+        spinnerInit.succeed(`Template ${primaryStack} clonado en ${repoPath}`);
+      } else {
+        fs.mkdirSync(repoPath, { recursive: true });
+        await execa('git', ['init'], { cwd: repoPath });
+        spinnerInit.succeed(`Carpeta creada e inicializada: ${repoPath}`);
+      }
+
+      // Crear repo en GitHub y conectarlo
+      const repoSpinner = ora(`Creando repo ${owner}/${repoName} en GitHub...`).start();
+      try {
+        await execa('gh', ['repo', 'create', `${owner}/${repoName}`, '--private', '--source', repoPath, '--remote', 'origin']);
+        repoSpinner.succeed(`Repo creado: https://github.com/${owner}/${repoName}`);
+      } catch (err) {
+        repoSpinner.fail(`No se pudo crear el repo en GitHub: ${err.stderr ?? err.message}`);
+        console.log(chalk.gray('  Puedes crearlo después con: gh repo create'));
+      }
+
+      // Retornar con stacks ya elegidos — generar config abajo
+      const port = await input({ message: 'Puerto local del servicio (si aplica, o deja vacío):', default: '' });
+
+      const spinnerGen = ora('Generando CLAUDE.md y estructura .claude/...').start();
+      generateSingleRepoCLAUDE(repoPath, {
+        projectName: projectName.trim(),
+        projectDescription: projectDescription.trim(),
+        stack: stackLabel(stacks),
+        port: port.trim() || 'N/A',
+        owner: owner.trim(),
+        repoName,
+      });
+      generateClaudeDir(repoPath, stacks, { selectedSkills, mcpConfig });
+      generateIssueTemplates(repoPath);
+      spinnerGen.succeed('Estructura generada');
+
+      try {
+        await execa('git', ['add', '.'], { cwd: repoPath });
+        await execa('git', ['commit', '-m', 'chore(setup): initial workspace config'], { cwd: repoPath });
+        await execa('git', ['push', '-u', 'origin', 'HEAD'], { cwd: repoPath });
+        console.log(chalk.green('✓ Primer commit pusheado'));
+      } catch {
+        console.log(chalk.yellow('⚠  No se pudo hacer el primer push. Hazlo manualmente.'));
+      }
+
+      return { repoPath, owner: owner.trim(), repoName };
+    } catch (err) {
+      spinnerInit.fail(`Error: ${err.message}`);
       process.exit(1);
     }
   }
@@ -508,15 +605,25 @@ async function stepProjectContext() {
 // ──────────────────────────────────────────────────────────────
 
 const ALL_SKILLS = [
-  { value: 'session-start',    name: 'session-start      — Inicia sesión: revisa issues activos, estado del repo',          checked: true },
-  { value: 'progress-tracker', name: 'progress-tracker   — Guarda progreso: commit + push + comenta en el issue',           checked: true },
-  { value: 'planning',         name: 'planning            — Planifica: crea issues, epics, sub-issues en GitHub',           checked: true },
-  { value: 'code-review',      name: 'code-review         — Revisa PRs con perspectiva fresca',                             checked: true },
-  { value: 'cross-repo',       name: 'cross-repo          — Cambios que afectan múltiples repos a la vez',                  checked: false },
-  { value: 'triage',           name: 'triage              — Cierra issues cubiertos, mueve estados en bulk',                checked: false },
-  { value: 'security-review',  name: 'security-review     — Revisión de seguridad de los cambios pendientes',               checked: false },
-  { value: 'ui-ux',            name: 'ui-ux               — Diseño UI/UX: estilos, componentes, accesibilidad',             checked: false },
-  { value: 'repo-setup',       name: 'repo-setup          — Configura un repo individual para trabajo atómico',             checked: false },
+  // — Flujo principal (activados por defecto) —
+  { value: 'init',     name: '/init     — Orientar: lee estado, issues activos y rama actual',              checked: true  },
+  { value: 'plan',     name: '/plan     — Planificar: crea issues, epics y sub-issues en GitHub',           checked: true  },
+  { value: 'apply',    name: '/apply    — Ejecutar: toma el issue activo y lo implementa',                  checked: true  },
+  { value: 'test',     name: '/test     — Verificar: corre suite, reporta cobertura, detecta huecos',       checked: true  },
+  { value: 'build',    name: '/build    — Guardar: commit + push + comenta progreso en el issue',           checked: true  },
+  { value: 'review',   name: '/review   — Revisar: code review del PR con perspectiva fresca',              checked: true  },
+  { value: 'secure',   name: '/secure   — Validar: pre-deploy security checklist (env, secrets, deps)',     checked: true  },
+  { value: 'deploy',   name: '/deploy   — Publicar: Dockerfile + GitHub Actions + .env.example',           checked: true  },
+  // — Comandos de soporte —
+  { value: 'debug',    name: '/debug    — Depurar: analiza error/log, propone y aplica el fix',             checked: false },
+  { value: 'audit',    name: '/audit    — Auditar: revisión OWASP profunda del código de aplicación',          checked: false },
+  { value: 'pentest',  name: '/pentest  — Barrida completa: secrets, CVEs, endpoints, infra, análisis estático', checked: false },
+  { value: 'sync',     name: '/sync     — Resincronizar: detecta drift entre código y plan en GitHub',      checked: false },
+  { value: 'rollback', name: '/rollback — Revertir: deshace el último deploy de forma segura',              checked: false },
+  { value: 'design',   name: '/design   — Diseñar: UI/UX, estilos, componentes, accesibilidad',            checked: false },
+  { value: 'triage',   name: '/triage   — Limpiar: cierra issues cubiertos, mueve estados en bulk',        checked: false },
+  { value: 'cross',    name: '/cross    — Multi-repo: cambios que afectan varios repos a la vez',           checked: false },
+  { value: 'setup',    name: '/setup    — Refresh: regenera CLAUDE.md y config de un repo individual',      checked: false },
 ];
 
 async function stepSkillsSelection() {
@@ -646,7 +753,7 @@ function stepSummary({ rootPath, projectData, projectType }) {
 
 async function main() {
   console.log(chalk.bold.magenta('\n╔═══════════════════════════════════════╗'));
-  console.log(chalk.bold.magenta('║       force-template  v1.0.0          ║'));
+  console.log(chalk.bold.magenta('║     workspace-template  v1.0.0        ║'));
   console.log(chalk.bold.magenta('║  Claude Code Workspace Setup CLI      ║'));
   console.log(chalk.bold.magenta('╚═══════════════════════════════════════╝\n'));
 
@@ -688,7 +795,54 @@ async function main() {
   stepSummary({ rootPath, projectData, projectType });
 }
 
-main().catch((err) => {
+// ──────────────────────────────────────────────────────────────
+// Router de subcomandos
+// ──────────────────────────────────────────────────────────────
+
+function printHelp() {
+  console.log(chalk.bold.magenta('\nworkspace-template — CLI para Claude Code\n'));
+  console.log(chalk.white('Uso:'));
+  console.log(chalk.gray('  npx workspace-template            ') + chalk.white('Inicializa un workspace nuevo'));
+  console.log(chalk.gray('  npx workspace-template update [path]') + chalk.white('  Actualiza skills/rules a la última versión'));
+  console.log(chalk.gray('  npx workspace-template version    ') + chalk.white('Muestra la versión instalada'));
+  console.log(chalk.gray('  npx workspace-template help       ') + chalk.white('Muestra esta ayuda\n'));
+}
+
+async function router() {
+  const [cmd, ...rest] = process.argv.slice(2);
+
+  switch (cmd) {
+    case undefined:
+    case 'init':
+    case 'new':
+      return main();
+
+    case 'update':
+    case 'upgrade': {
+      const target = rest[0] ?? process.cwd();
+      return runUpdate(target);
+    }
+
+    case 'version':
+    case '--version':
+    case '-v':
+      console.log(getCurrentPackageVersion());
+      return;
+
+    case 'help':
+    case '--help':
+    case '-h':
+      printHelp();
+      return;
+
+    default:
+      console.log(chalk.red(`\n✗ Comando desconocido: "${cmd}"`));
+      printHelp();
+      process.exit(1);
+  }
+}
+
+router().catch((err) => {
   if (err.name === 'ExitPromptError') {
     console.log(chalk.yellow('\n\nSaliendo... (operación cancelada por el usuario)\n'));
     process.exit(0);

@@ -1,4 +1,4 @@
-# Skill: cross-repo
+# /cross
 
 Plan and execute changes that span multiple repositories. Use when a feature requires modifications to backend AND frontend simultaneously, or when an API contract change affects more than one repo.
 
@@ -31,3 +31,10 @@ For each repo affected, produce:
 - Files changed (with rationale)
 - PR title and body referencing the parent issue
 - Any migration or deployment notes
+
+## Siguiente paso
+
+- **Contrato definido** → `/apply` en el repo backend primero
+- **Backend mergeado** → `/apply` en el frontend con el contrato ya estable
+- **Todos los PRs abiertos** → `/review` en cada uno
+- **Todo mergeado** → `/secure` + `/deploy` en el orden correcto (backend antes que frontend)

@@ -1,14 +1,46 @@
 {
-  "name": "force-template",
+  "name": "workspace-template",
   "version": "1.0.0",
-  "description": "Claude Code workspace setup CLI — single-repo & multi-repo",
+  "description": "CLI para configurar workspaces de Claude Code — single-repo y multi-repo con skills, rules, MCP tools e integración GitHub",
   "type": "module",
   "bin": {
-    "force": "./bin/force.js",
-    "force-template": "./bin/force.js"
+    "workspace-template": "./bin/workspace-template.js"
   },
   "scripts": {
-    "start": "node bin/force.js"
+    "start": "node bin/workspace-template.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "templates/",
+    "setup.sh",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "claude-code",
+    "claude",
+    "cli",
+    "workspace",
+    "template",
+    "scaffold",
+    "monorepo",
+    "multi-repo",
+    "github",
+    "mcp"
+  ],
+  "author": "Dev3ch",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dev3ch/workspace_template.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dev3ch/workspace_template/issues"
+  },
+  "homepage": "https://github.com/Dev3ch/workspace_template#readme",
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",

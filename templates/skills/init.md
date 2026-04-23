@@ -1,4 +1,4 @@
-# /session-start
+# /init
 
 Inicia una sesión de desarrollo. Orienta a Claude sobre el estado actual del proyecto.
 
@@ -67,6 +67,16 @@ Estado: In Progress
 
 Próximo paso: Implementar webhook handler en apps/payments/views.py
 ```
+
+## Siguiente paso
+
+Según el estado detectado:
+
+- **Hay issue en progreso con rama creada** → `/apply` (continuar implementación)
+- **Hay issue asignado pero sin rama** → `/plan` (detallar tareas) o `/apply` (empezar directo)
+- **Backlog vacío o necesitas decidir qué hacer** → `/plan` (crear nuevo issue)
+- **Otros devs hicieron cambios recientes** → `/sync` primero, luego `/plan` o `/apply`
+- **Hay un PR abierto esperando review** → `/review`
 
 ## Notas
 

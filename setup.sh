@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup.sh — Entrypoint para force-template
+# setup.sh — Entrypoint para workspace-template
 # Verifica que node esté instalado y delega al CLI principal
 
 set -e
@@ -35,4 +35,4 @@ if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
 fi
 
 # Ejecutar CLI
-node "$SCRIPT_DIR/bin/force.js" "$@"
+node "$SCRIPT_DIR/bin/workspace-template.js" "$@"

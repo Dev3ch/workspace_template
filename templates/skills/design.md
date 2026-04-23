@@ -1,4 +1,4 @@
-# Skill: ui-ux
+# /design
 
 UI/UX design intelligence for web interfaces. Includes style recommendations, color palettes, accessibility checks, component design, and responsive layout guidance.
 
@@ -49,3 +49,10 @@ UI/UX design intelligence for web interfaces. Includes style recommendations, co
 - Component code (clean, accessible, responsive).
 - Color and typography recommendations if a new design system is needed.
 - Accessibility findings with severity and fix.
+
+## Siguiente paso
+
+- **Diseño aprobado, listo para implementar** → `/apply` (escribir el código)
+- **Necesitas validar accesibilidad antes de producción** → `/review` con checklist a11y
+- **Cambio impacta UX de varios módulos** → `/plan` para dividir en sub-issues
+- **Necesitas docs UI/UX avanzadas** → activar skill `ui-ux-pro-max` de la comunidad

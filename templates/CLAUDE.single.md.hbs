@@ -75,8 +75,29 @@ Todo contexto de proyecto vive en GitHub.
 | Convenciones | Este `CLAUDE.md` + `.claude/rules/` |
 | Preferencias personales | `CLAUDE.local.md` (no commitear) |
 
+## Flujo estándar de trabajo
+
+```
+Desarrollo:
+  /init → /plan → /apply → /test → /build → /review
+
+Deploy:
+  /secure → /deploy
+
+Soporte:
+  /debug    — cuando /apply o /test fallan
+  /audit    — revisión OWASP profunda antes de mergear cambios sensibles
+  /pentest  — barrida completa de seguridad sobre todo el proyecto (periódico)
+  /sync     — cuando hay drift entre código y GitHub
+  /rollback — cuando un deploy rompe producción
+  /design   — cuando hay trabajo de UI/UX
+  /triage   — limpieza periódica de issues
+```
+
 **Reglas operativas para Claude:**
 
-1. Al arrancar sesión: `/session-start`
-2. Al cerrar sesión: `/progress-tracker`
-3. Aprendizajes que deben persistir: commitear al `CLAUDE.md`.
+1. Al arrancar sesión: `/init`
+2. Al cerrar sesión: `/build`
+3. Antes de cada deploy: `/secure` es obligatorio.
+4. Si el plan en GitHub no refleja el código: correr `/sync`.
+5. Aprendizajes que deben persistir: commitear al `CLAUDE.md`.
