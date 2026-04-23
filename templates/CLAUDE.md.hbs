@@ -1,0 +1,132 @@
+# CLAUDE.md
+
+Guía para Claude Code en este workspace.
+
+## Qué es {{projectName}}
+
+{{projectDescription}}
+
+Arquitectura: **microservicios con DB centralizada**. El servicio de API es el único que toca la DB; los satélites se comunican con él vía HTTP autenticado.
+
+Todos los repos viven en la org GitHub `{{owner}}`.
+
+## Topología
+
+```
+{{#each repos}}
+┌─────────────────────────────────┐
+│  {{name}}  (puerto {{port}})   │
+│  Stack: {{stack}}              │
+│  Rol: {{role}}                 │
+└─────────────────────────────────┘
+{{/each}}
+```
+
+## Repos
+
+| Repo | Stack | Puerto local | Rol |
+|---|---|---|---|
+{{#each repos}}
+| `{{name}}` | {{stack}} | {{port}} | {{role}} |
+{{/each}}
+
+Cada repo tiene su propia `.git` y su propio `CLAUDE.md` autosuficiente. El detalle de stack, tests y convenciones vive en cada repo.
+
+## Comunicación entre servicios
+
+La comunicación entre servicios es **HTTP sync por defecto**.
+
+**Canal principal: HTTP (sync)**
+
+- Servicios se comunican vía `POST` HTTP con header de autenticación.
+- Las funciones de dispatch toleran fallo: devuelven `None` y loguean excepción, nunca raisean al caller.
+
+**Correlation: `X-Request-Id` (obligatorio)**
+
+Toda llamada HTTP cross-service propaga el header `X-Request-Id`. Contrato:
+- **Inbound:** al recibir un request, leer `X-Request-Id`. Si falta, generar `uuid4()`.
+- **Outbound:** al llamar a otro servicio, reenviar el `X-Request-Id` del contexto actual.
+
+## Levantar el ecosistema local
+
+```bash
+# Todo el stack
+docker compose up
+
+# Solo infra
+docker compose up redis postgres
+
+# Logs de un servicio
+docker compose logs -f <nombre-servicio>
+```
+
+## Convenciones globales
+
+### Commits
+
+Formato conventional **enforced por commitlint**:
+
+```
+feat(scope): descripción #N
+fix(scope): descripción #N
+hotfix(scope): descripción #N
+refactor(scope): descripción #N
+docs(scope): descripción #N
+chore(scope): descripción #N
+```
+
+Types válidos: `feat`, `fix`, `hotfix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`, `build`, `style`, `revert`. Header máximo 100 chars.
+
+### Branching
+
+Modelo **3 branches protegidas** (GitFlow-light):
+
+| Branch | Rol |
+|---|---|
+| `main` | Producción. Solo recibe merges desde `staging` y hotfixes. |
+| `staging` | Pre-producción / QA. Recibe merges desde `dev`. |
+| `dev` | Integración. Default para features y fixes. |
+| `feat/*`, `fix/*`, `hotfix/*` | Ramas de trabajo efímeras. |
+
+**Flujo estándar:**
+1. Crea branch desde `dev`: `git checkout -b feat/issue-{N}-descripcion`
+2. Commits conventional referenciando issue: `feat(scope): descripción #N`
+3. Abre PR contra `dev`. Body incluye `Closes #N`.
+4. Squash merge → `dev`.
+
+### Idioma
+- **Código y comentarios:** según la convención del equipo.
+- **Commits y PRs:** español o inglés consistente.
+
+## Reglas de trabajo cross-repo
+
+1. **Un cambio de contrato API = dos repos.** Si modificás un endpoint que consume otro servicio, también actualizás el tipo en ese servicio.
+2. **DB solo en el servicio de API.** Ningún satélite debe tener acceso directo a la DB.
+3. **Secrets nunca en código.** Viven en `.envs/.local/` (no commiteados).
+4. **Tests obligatorios para mutaciones.** Endpoints nuevos requieren test de happy path + al menos un error path.
+5. **Tracking en GitHub Issues.** Cada feature es un issue en el repo correspondiente.
+
+## Context policy
+
+Todo contexto de proyecto vive en GitHub. Cero contexto local.
+
+**Permitido local:**
+- `CLAUDE.local.md` — preferencias personales del dev
+
+**Dónde vive cada cosa:**
+
+| Contexto | Dónde |
+|---|---|
+| Estado de una feature en curso | Issue de GitHub (comments para progreso) |
+| Plan de un epic | Body del issue padre + sub-issues |
+| Progreso de sesión | Comment en el issue activo (vía `/progress-tracker`) |
+| Convenciones del repo | `CLAUDE.md` + `.claude/rules/` (commiteados) |
+| Convenciones cross-repo | Este archivo (commiteado en workspace raíz) |
+| Preferencias personales | `CLAUDE.local.md` |
+
+**Reglas operativas para Claude:**
+
+1. Al arrancar sesión: `/session-start` lee issues/PRs activos desde GitHub.
+2. Al cerrar sesión: `/progress-tracker` escribe comment en el issue + push.
+3. Si aparece un aprendizaje que debe persistir: commitearlo al `CLAUDE.md` del repo correspondiente.
+4. Si aparece un plan que debe sobrevivir la sesión: pegarlo en el body del issue o crear issue nuevo.
