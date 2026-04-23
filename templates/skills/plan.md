@@ -73,13 +73,20 @@ EOF
 
 ### 4. Agregar al GitHub Project
 
+Leer la configuración del Project guardada en este workspace:
 ```bash
-# Obtener el número del project
-gh project list --owner <owner>
-
-# Agregar issue al project
-gh project item-add <project-number> --owner <owner> --url <issue-url>
+cat .claude/.workspace-version
 ```
+
+El campo `githubProject` contiene `number`, `owner` y `url`. Usar esos valores directamente.
+Si el campo no existe, preguntar al dev el número del Project antes de continuar y sugerirle que ejecute `npx workspace-template` para configurarlo.
+
+Agregar cada issue al Project **inmediatamente** después de crearlo:
+```bash
+gh project item-add <number> --owner <owner> --url <issue-url>
+```
+
+**Importante:** Vincular al Project es obligatorio, no opcional. Si falla, reportar el error y pedir al dev que lo haga manualmente con el comando de arriba.
 
 ### 5. Linkear sub-issues al epic
 

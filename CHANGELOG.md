@@ -6,14 +6,21 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+---
+
+## [1.0.3] — 2026-04-23
+
 ### Added
-- (Nada todavía)
+- GitHub Project ahora se persiste en `.claude/.workspace-version` bajo el campo `githubProject` (`number`, `owner`, `url`, `title`) al finalizar el setup. Los skills pueden leerlo sin que el usuario lo vuelva a configurar.
+- El owner del GitHub Project se guarda **de forma independiente** al owner del repo — soporta Projects de orgs distintas al repo o Projects de usuario.
+- `saveGithubProject()` y `readGithubProject()` exportadas desde `lib/updater.js` para leer/escribir la config del Project desde cualquier parte del CLI.
 
 ### Changed
-- (Nada todavía)
+- Paso 5 (GitHub Project) ahora pregunta explícitamente el owner del Project con el owner del repo como valor por defecto. Permite vincular repos personales a Projects de orgs y viceversa.
+- Skill `/plan` actualizado: lee `githubProject` de `.workspace-version` y vincula cada issue al Project con `gh project item-add` inmediatamente al crearlo. Si el campo no existe, pide el número al dev antes de continuar.
 
 ### Fixed
-- (Nada todavía)
+- `update` ahora detecta skills y rules que ya no existen en el template actual y los muestra como `- N obsoleto(s)`. El usuario puede seleccionar cuáles eliminar antes de aplicar. Antes el update solo agregaba y modificaba, nunca limpiaba.
 
 ---
 
@@ -130,7 +137,8 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/Dev3ch/workspace_template/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/Dev3ch/workspace_template/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Dev3ch/workspace_template/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Dev3ch/workspace_template/releases/tag/v1.0.0

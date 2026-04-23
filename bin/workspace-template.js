@@ -38,7 +38,7 @@ import {
   printGeneratedTree,
 } from '../lib/workspace-gen.js';
 import { askMcpIntegrations, mergeMcpConfig } from '../lib/mcp-tools.js';
-import { runUpdate, getCurrentPackageVersion } from '../lib/updater.js';
+import { runUpdate, getCurrentPackageVersion, saveGithubProject } from '../lib/updater.js';
 
 // ──────────────────────────────────────────────────────────────
 // HELPERS
@@ -646,21 +646,29 @@ async function stepSkillsSelection() {
 // PASO 5 — GitHub Project (opcional)
 // ──────────────────────────────────────────────────────────────
 
-async function stepGithubProject(owner) {
+async function stepGithubProject(repoOwner) {
   console.log(chalk.bold.cyan('\n═══ Paso 5 — GitHub Project ═══\n'));
   console.log(chalk.gray('Un GitHub Project es el tablero donde viven los issues y el estado del workspace.\n'));
 
   const action = await select({
     message: '¿Qué quieres hacer con el GitHub Project?',
     choices: [
-      { name: 'Usar uno que ya tengo (por número o URL)',       value: 'existing' },
-      { name: 'Crear uno nuevo',                                 value: 'create' },
-      { name: 'Elegir de la lista de mis projects',              value: 'pick' },
-      { name: 'Ninguno por ahora',                               value: 'skip' },
+      { name: 'Usar uno que ya tengo (por número o URL)',  value: 'existing' },
+      { name: 'Crear uno nuevo',                           value: 'create' },
+      { name: 'Elegir de la lista de mis projects',        value: 'pick' },
+      { name: 'Ninguno por ahora',                         value: 'skip' },
     ],
   });
 
   if (action === 'skip') return null;
+
+  // Preguntar el owner del Project — puede ser org o usuario, distinto al repo
+  const projectOwner = await input({
+    message: `Owner del GitHub Project (org o usuario):`,
+    default: repoOwner,
+    validate: (v) => v.trim().length > 0 || 'Requerido',
+  });
+  const owner = projectOwner.trim();
 
   if (action === 'existing') {
     const raw = await input({
@@ -671,7 +679,7 @@ async function stepGithubProject(owner) {
     try {
       const data = await getGithubProject(owner, number);
       console.log(chalk.green(`✓ Project encontrado: ${data.title} — ${data.url}`));
-      return data;
+      return { ...data, owner };
     } catch (err) {
       console.log(chalk.yellow(`⚠  No se pudo leer el project #${number}: ${err.message}`));
       return null;
@@ -693,7 +701,7 @@ async function stepGithubProject(owner) {
     });
     const data = projects.find((p) => p.number === picked);
     console.log(chalk.green(`✓ Usando: ${data.title} — ${data.url}`));
-    return data;
+    return { ...data, owner };
   }
 
   // action === 'create'
@@ -703,7 +711,8 @@ async function stepGithubProject(owner) {
   });
 
   try {
-    return await createGithubProject(owner, projectTitle.trim());
+    const data = await createGithubProject(owner, projectTitle.trim());
+    return { ...data, owner };
   } catch (err) {
     console.log(chalk.yellow(`⚠  No se pudo crear el proyecto: ${err.message}`));
     console.log(chalk.gray('  Puedes crearlo manualmente en https://github.com/orgs/' + owner + '/projects/new'));
@@ -792,6 +801,11 @@ async function main() {
 
   // Paso 5
   const projectData = await stepGithubProject(owner);
+
+  // Persistir GitHub Project ID en .workspace-version para que los skills lo lean
+  if (projectData) {
+    saveGithubProject(rootPath, { ...projectData, owner });
+  }
 
   // Paso 6
   stepSummary({ rootPath, projectData, projectType });

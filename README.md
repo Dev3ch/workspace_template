@@ -100,10 +100,11 @@ Qué hace:
    - **`+` nuevo** — skills que no tenías (aparece checkeado por defecto)
    - **`~` actualizado** — cambió upstream sin que tú lo modificaras (checkeado)
    - **`!` personalizado** — tú lo modificaste localmente (NO checkeado — confirma antes de sobrescribir)
-4. Te deja elegir qué aplicar con checkboxes.
+   - **`-` obsoleto** — ya no existe en el template actual (checkeado por defecto para eliminar)
+4. Te deja elegir qué aplicar y qué eliminar con checkboxes.
 5. Commitea los cambios en tu repo con un mensaje estándar.
 
-Tus personalizaciones siempre se respetan salvo que las selecciones manualmente.
+Tus personalizaciones siempre se respetan salvo que las selecciones manualmente. Los archivos obsoletos se eliminan solo si los confirmas.
 
 ## Multi-repo: entrada en batch
 
@@ -132,12 +133,16 @@ Después, para cada repo detectado, solo te pregunta lo específico: **rol**, **
 
 El paso 8 te ofrece 4 caminos para enlazar el workspace con un tablero de issues:
 
+El CLI pregunta primero el **owner del Project** (org o usuario), con el owner del repo como valor por defecto. Puedes cambiarlo si el Project pertenece a una org distinta al repo o a tu cuenta personal.
+
 | Opción | Qué hace |
 |---|---|
 | **Usar uno que ya tengo** | Pegas el número (`5`) o URL (`.../projects/5`) y el CLI lo verifica con `gh project view` |
-| **Elegir de la lista** | Ejecuta `gh project list --owner <tú>` y te muestra todos los projects para seleccionar |
+| **Elegir de la lista** | Ejecuta `gh project list --owner <owner>` y te muestra todos los projects para seleccionar |
 | **Crear uno nuevo** | Ejecuta `gh project create` con el nombre que le des |
 | **Ninguno** | Salta el paso sin hacer nada |
+
+La configuración del Project (`number`, `owner`, `url`, `title`) queda guardada en `.claude/.workspace-version`. El skill `/plan` la lee automáticamente para vincular cada issue al Project sin pedirte el número cada vez.
 
 ## Qué genera
 
