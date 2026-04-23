@@ -215,6 +215,15 @@ async function stepProjectType() {
 async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
   console.log(chalk.bold.cyan('\n═══ Paso 4 — Configuración single-repo ═══\n'));
 
+  const repoOrigin = await select({
+    message: '¿Cómo está tu proyecto?',
+    choices: [
+      { name: 'Ya tengo repo en GitHub (o SSH)',       value: 'github' },
+      { name: 'Ya tengo carpeta local (sin GitHub)',    value: 'local' },
+      { name: 'Empiezo desde cero',                     value: 'scratch' },
+    ],
+  });
+
   const projectName = await input({
     message: 'Nombre del proyecto:',
     validate: (v) => v.trim().length > 0 || 'El nombre no puede estar vacío',
@@ -223,15 +232,6 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
   const projectDescription = await input({
     message: 'Descripción breve del proyecto:',
     default: `Plataforma ${projectName}`,
-  });
-
-  const repoOrigin = await select({
-    message: '¿Cómo está tu proyecto?',
-    choices: [
-      { name: 'Ya tengo repo en GitHub (o SSH)',       value: 'github' },
-      { name: 'Ya tengo carpeta local (sin GitHub)',    value: 'local' },
-      { name: 'Empiezo desde cero',                     value: 'scratch' },
-    ],
   });
 
   let repoPath;
@@ -282,8 +282,10 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
         repoName = parsed.repo;
         console.log(chalk.gray(`  → Detectado: ${owner}/${repoName}`));
       } catch {
-        // sin remote github — se pide después
+        console.log(chalk.yellow('  ⚠  No se detectó remote de GitHub — te pediré el owner y repo manualmente'));
       }
+    } else {
+      console.log(chalk.yellow('  ⚠  No se detectó remote de GitHub — te pediré el owner y repo manualmente'));
     }
 
   } else {
@@ -332,7 +334,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
       }
 
       // Retornar con stacks ya elegidos — generar config abajo
-      const port = await input({ message: 'Puerto local del servicio (si aplica, o deja vacío):', default: '' });
+      const port = await input({ message: 'Puerto local (ej: 3000, 8000). Enter para omitir:', default: '' });
 
       const spinnerGen = ora('Generando CLAUDE.md y estructura .claude/...').start();
       generateSingleRepoCLAUDE(repoPath, {
@@ -377,7 +379,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
   }
 
   const port = await input({
-    message: 'Puerto local del servicio (si aplica, o deja vacío):',
+    message: 'Puerto local (ej: 3000, 8000). Enter para omitir:',
     default: '',
   });
 

@@ -17,6 +17,15 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.0.1] — 2026-04-23
+
+### Changed
+- Single-repo: la pregunta de origen del proyecto (GitHub / local / desde cero) ahora aparece **antes** del nombre y la descripción, para que el usuario sepa el contexto antes de nombrar el proyecto.
+- Flujo local sin remote GitHub: el CLI ahora muestra un aviso explícito (`⚠ No se detectó remote de GitHub — te pediré el owner y repo manualmente`) en lugar de pedir los datos sin previo aviso.
+- Pregunta de puerto local cambiada a `Puerto local (ej: 3000, 8000). Enter para omitir:` para dejar claro el formato esperado y que es opcional.
+
+---
+
 ## [1.0.0] — 2026-04-23
 
 Primera versión estable. CLI completo para configurar workspaces de Claude Code con ciclo de vida completo: de cero a producción.
@@ -114,5 +123,6 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/Dev3ch/workspace_template/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Dev3ch/workspace_template/releases/tag/v1.0.0
