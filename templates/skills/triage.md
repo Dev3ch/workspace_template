@@ -1,3 +1,8 @@
+---
+name: triage
+description: Cierra issues cubiertos y mueve estados en bulk.
+---
+
 # /triage
 
 Analyze a PR or epic against its issues, update acceptance criteria coverage, close covered issues, and move board statuses in bulk.

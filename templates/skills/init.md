@@ -1,3 +1,8 @@
+---
+name: init
+description: Inicia sesión: lee estado del repo, issues activos y rama actual. Usar al arrancar.
+---
+
 # /init
 
 Inicia una sesión de desarrollo. Orienta a Claude sobre el estado actual del proyecto.

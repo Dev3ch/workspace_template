@@ -1,3 +1,8 @@
+---
+name: secure
+description: Pre-deploy checklist obligatorio: env vars, secrets, CVEs, Dockerfile, CI.
+---
+
 # /secure
 
 Pre-deploy checklist obligatorio: valida que el proyecto está listo para publicarse sin comprometer secrets, credenciales ni estabilidad.

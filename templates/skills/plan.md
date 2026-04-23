@@ -1,3 +1,8 @@
+---
+name: plan
+description: Crea issues, epics y sub-issues en GitHub. Usar para planificar features.
+---
+
 # /plan
 
 Planifica y crea issues en GitHub — features nuevas, epics, o descompone un epic en sub-issues.

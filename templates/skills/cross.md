@@ -1,3 +1,8 @@
+---
+name: cross
+description: Coordina cambios que afectan múltiples repositorios simultáneamente.
+---
+
 # /cross
 
 Plan and execute changes that span multiple repositories. Use when a feature requires modifications to backend AND frontend simultaneously, or when an API contract change affects more than one repo.

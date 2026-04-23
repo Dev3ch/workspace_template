@@ -1,3 +1,8 @@
+---
+name: debug
+description: Analiza un error o log, identifica la causa raíz y aplica el fix.
+---
+
 # /debug
 
 Analiza un error o log, identifica la causa raíz, propone el fix y lo aplica.

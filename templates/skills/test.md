@@ -1,3 +1,8 @@
+---
+name: test
+description: Corre el suite completo, reporta cobertura e identifica tests faltantes.
+---
+
 # /test
 
 Corre el suite completo de tests, reporta cobertura e identifica qué falta cubrir.

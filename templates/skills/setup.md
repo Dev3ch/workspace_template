@@ -1,3 +1,8 @@
+---
+name: setup
+description: Regenera CLAUDE.md y config de un repo individual.
+---
+
 # /setup
 
 Genera o refresca la configuración completa de Claude Code para un repo individual. Útil cuando el repo no tiene `CLAUDE.md` todavía, o cuando la config está desactualizada.

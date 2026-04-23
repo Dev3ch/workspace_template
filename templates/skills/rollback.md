@@ -1,3 +1,8 @@
+---
+name: rollback
+description: Revierte el último deploy de forma segura y crea issue de post-mortem.
+---
+
 # /rollback
 
 Revierte el último deploy de forma segura: identifica qué se deployó, deshace los cambios y vuelve a publicar el estado anterior.

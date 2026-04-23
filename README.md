@@ -151,7 +151,8 @@ El paso 8 te ofrece 4 caminos para enlazar el workspace con un tablero de issues
 │   │   ├── tests.md                   ← reglas de testing
 │   │   └── typescript.md              ← reglas de stack (según lo que elegiste)
 │   ├── skills/
-│   │   └── <solo los skills elegidos>.md
+│   │   └── <skill>/
+│   │       └── SKILL.md               ← formato requerido por Claude Code
 │   └── settings.json                  ← config MCP (si elegiste integraciones)
 └── .github/
     ├── ISSUE_TEMPLATE/
@@ -203,8 +204,17 @@ Todos los comandos son skills de Claude Code invocables con `/comando`.
 
 ### Agregar un comando propio
 
-1. Crea `.claude/skills/<nombre>.md` en el workspace
-2. El archivo debe empezar con `# /<nombre>` y describir cuándo invocarlo y qué pasos seguir
+1. Crea la carpeta `.claude/skills/<nombre>/` en el workspace
+2. Dentro crea `SKILL.md` con este encabezado:
+   ```markdown
+   ---
+   name: <nombre>
+   description: Qué hace y cuándo invocarlo
+   ---
+
+   # /<nombre>
+   ...instrucciones...
+   ```
 3. Claude Code lo reconoce automáticamente como `/<nombre>`
 
 ## Integraciones MCP

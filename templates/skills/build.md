@@ -1,3 +1,8 @@
+---
+name: build
+description: Commit + push + comenta progreso en el issue activo. Usar al cerrar sesión o terminar una tarea.
+---
+
 # /build
 
 Guarda el progreso de la sesión en GitHub y hace push del trabajo.

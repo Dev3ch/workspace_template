@@ -1,3 +1,8 @@
+---
+name: design
+description: UI/UX: estilos, componentes, paletas, accesibilidad y layout.
+---
+
 # /design
 
 UI/UX design intelligence for web interfaces. Includes style recommendations, color palettes, accessibility checks, component design, and responsive layout guidance.

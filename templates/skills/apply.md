@@ -1,3 +1,8 @@
+---
+name: apply
+description: Ejecuta el issue activo: implementa el código y corre los tests. Usar después de /plan.
+---
+
 # /apply
 
 Ejecuta el issue activo: lee el plan, implementa el código, corre los tests y reporta resultado.

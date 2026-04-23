@@ -1,3 +1,8 @@
+---
+name: deploy
+description: Genera Dockerfile, GitHub Actions y .env.example. Usar después de /secure.
+---
+
 # /deploy
 
 Prepara el proyecto para deployment: genera Dockerfile, GitHub Actions de CI/CD y `.env.example` según el stack y proveedor elegido.

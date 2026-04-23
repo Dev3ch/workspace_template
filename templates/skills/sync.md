@@ -1,3 +1,8 @@
+---
+name: sync
+description: Detecta drift entre código real y plan en GitHub. Reconcilia issues.
+---
+
 # /sync
 
 Detecta drift entre el código real y el plan en GitHub. Reconcilia issues resueltos indirectamente, duplicados o desactualizados.

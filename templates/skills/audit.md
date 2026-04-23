@@ -1,3 +1,8 @@
+---
+name: audit
+description: Revisión de seguridad OWASP Top 10 de los cambios pendientes. Usar antes de mergear cambios sensibles.
+---
+
 # /audit
 
 Revisión de seguridad profunda de los cambios pendientes: OWASP Top 10, auth, autorización, inyección y lógica sensible.

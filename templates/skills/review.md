@@ -1,3 +1,8 @@
+---
+name: review
+description: Code review del PR con perspectiva fresca. Usar antes de mergear.
+---
+
 # /review
 
 Revisa código con perspectiva fresca. Ideal para revisar PRs o validar implementaciones.
