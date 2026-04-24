@@ -60,6 +60,11 @@ El CLI te guía paso a paso. Todo en español.
                   Clona los que aún no están locales
                   Luego, por cada repo, pregunta solo: rol, puerto y stack
 
+   Normalización de branches (automático en cada repo):
+      · Default master  → ofrece rename a main (no bloquea si el dev rehúsa)
+      · dev obligatoria → se crea desde la default si no existe
+      · staging opcional → se pregunta; default: no crearla
+
 5. Contexto del proyecto
    Descripción del proyecto (1-2 frases)
    Dominio: ecommerce, SaaS B2B, fintech, CRM, salud, educación, logística, otro
@@ -206,6 +211,7 @@ Todos los comandos son skills de Claude Code invocables con `/comando`.
 | `/triage` | Limpieza: cierra issues cubiertos y mueve estados en bulk |
 | `/cross` | Multi-repo: coordina cambios que afectan varios repos a la vez |
 | `/setup` | Refresh: regenera `CLAUDE.md` y config de un repo individual |
+| `/branches` | Normaliza el modelo de branches: `main` + `dev` (obligatoria) + `staging` opcional |
 
 ### Agregar un comando propio
 

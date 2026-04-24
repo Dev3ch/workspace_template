@@ -62,15 +62,26 @@ Si el issue no tiene plan estructurado, pedirlo al dev antes de continuar.
 git status
 git branch --show-current
 git log --oneline -5
-
-# Crear rama si no existe
-# git checkout -b feat/issue-<N>-<descripcion> dev
 ```
 
-Si no está en una rama `feat/*` o `fix/*`, crear una desde `dev`:
+**Regla invariante:** toda rama de trabajo (`feat/*`, `fix/*`, `chore/*`) se crea
+**desde `dev`**. Nunca desde `main`, `master` o `staging`.
+
+Si la rama actual no es `feat/*`, `fix/*` o `chore/*`, crear una nueva desde `dev`:
 ```bash
-git checkout dev && git pull origin dev
+git fetch origin --prune
+git checkout dev && git pull --ff-only origin dev
 git checkout -b feat/issue-<N>-<slug-del-titulo>
+```
+
+Si `dev` no existe en el remote → **abortar `/apply`** e invocar `/branches` primero.
+No improvisar creando la rama desde `main`.
+
+Si el dev explícitamente quiere basar la rama en `main` (caso excepcional: hotfix),
+confirmar y usar el prefijo correcto:
+```bash
+git checkout main && git pull --ff-only origin main
+git checkout -b hotfix/issue-<N>-<slug-del-titulo>
 ```
 
 ### 4. Leer SOLO el contexto necesario

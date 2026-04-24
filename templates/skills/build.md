@@ -48,6 +48,37 @@ Si el branch no tiene upstream:
 git push -u origin <branch-actual>
 ```
 
+### 3.5 Ofrecer abrir PR contra `dev`
+
+Si el branch actual es `feat/*`, `fix/*` o `chore/*` y aún no hay PR abierto,
+preguntar al dev si crear uno ya. La base es **siempre `dev`** (los PR hacia
+`staging` o `main` son promociones, no features).
+
+```bash
+BRANCH=$(git branch --show-current)
+EXISTING_PR=$(gh pr list --head "$BRANCH" --base dev --json number --jq '.[0].number')
+
+if [ -z "$EXISTING_PR" ] && echo "$BRANCH" | grep -qE '^(feat|fix|chore)/'; then
+  # Preguntar al dev si quiere abrir el PR ahora
+  gh pr create --base dev --head "$BRANCH" \
+    --title "feat: <título del issue> (#<N>)" \
+    --body "Closes #<N>
+
+## Resumen
+- <1-3 bullets del cambio>
+
+## Test plan
+- [ ] <qué probar>"
+fi
+```
+
+Si ya existe PR → solo agregar un comentario con el progreso de esta sesión.
+
+Si son **múltiples** cambios en repos distintos (multi-repo), abrir un PR por
+repo — nunca consolidar repos distintos en un solo PR. Si los cambios de un
+mismo repo corresponden a issues distintos, también van en PRs separados
+(un issue = un branch = un PR por repo).
+
 ### 4. Actualizar el issue con el progreso
 
 Crear un comment en el issue activo con:

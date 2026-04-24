@@ -1,5 +1,26 @@
 # Branching
 
+## Regla de sesión
+
+**Cada sesión nueva (`/init`) arranca en `dev`.** No es sugerencia — es la base
+compartida de trabajo del workspace. En multi-repo, **todos** los repos se
+posicionan en `dev` al iniciar.
+
+- Trabajar en `main` requiere confirmación explícita del dev y **no persiste**
+  al reiniciar la sesión.
+- Si un repo no tiene `dev`, invocar `/branches` antes de cualquier otra skill.
+
+## Normalización inicial
+
+Al incorporar un repo nuevo al workspace:
+
+- Default `master` → ofrecer rename a `main` (no bloquea si el usuario rehúsa).
+- `dev` obligatoria: se crea automáticamente desde la branch default si no existe.
+- `staging` opcional: se pregunta; default es no crearla.
+
+El setup de `workspace-template` lo hace automáticamente al clonar. Para repos
+ya existentes, usar `/branches`.
+
 ## Modelo: 3 branches protegidas (GitFlow-light)
 
 | Branch | Rol | Protección |

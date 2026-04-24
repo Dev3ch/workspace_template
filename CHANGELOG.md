@@ -8,6 +8,26 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.0.7] — 2026-04-24
+
+Versión centrada en **normalización del modelo de branches**: al incorporar un repo al workspace (clone, local o desde cero, en single-repo o multi-repo), el CLI garantiza que el repo tenga `main` (con opción de rename desde `master`) y `dev` como base de trabajo obligatoria. `staging` queda opcional para proyectos con QA previo. Los skills (`/init`, `/apply`, `/build`) refuerzan la regla: cada sesión nueva arranca en `dev`, tanto en single-repo como en todos los repos de un multi-repo.
+
+### Added
+- Nueva función `ensureBranchModel` en [lib/github.js](lib/github.js) que normaliza el modelo de branches de un repo. Detecta la branch default (vía `gh api` o `git symbolic-ref`), ofrece rename `master → main` con `gh api -X POST /repos/:o/:r/branches/master/rename`, crea `dev` sí o sí desde la default si no existe, y pregunta opcionalmente por `staging`. Helpers auxiliares: `getDefaultBranch`, `remoteBranchExists`, `renameRemoteBranch`, `createRemoteBranch`.
+- Nueva skill [templates/skills/branches.md](templates/skills/branches.md) — `/branches` — que un dev puede invocar en cualquier momento para auditar y reparar el modelo de branches. Útil cuando un repo se incorporó sin correr el normalizador del setup, o cuando el proyecto crece y ahora necesita `staging`.
+- Helper `normalizeRepoBranches` en [bin/workspace-template.js](bin/workspace-template.js) que envuelve `ensureBranchModel` con prompts interactivos (`confirm` de `@inquirer/prompts`) y spinners. Se invoca automáticamente en los 4 flujos de clone/setup: single-repo desde URL, single-repo local, single-repo desde cero (post-primer-push), y multi-repo (por cada repo).
+
+### Changed
+- [templates/skills/init.md](templates/skills/init.md): nuevo paso `0.5 Posicionarse en dev (obligatorio por sesión)`. Single-repo y multi-repo hacen `git checkout dev` al iniciar. Trabajar en `main` requiere confirmación explícita y no persiste entre sesiones. Si `dev` no existe, se aborta y se invoca `/branches`.
+- [templates/skills/apply.md](templates/skills/apply.md): refuerza que las ramas `feat/*`, `fix/*`, `chore/*` se crean **siempre desde `dev`** — nunca desde `main`, `master` o `staging`. Si no existe `dev`, el skill aborta.
+- [templates/skills/build.md](templates/skills/build.md): nuevo paso `3.5` que ofrece abrir PR automáticamente hacia `dev` con `gh pr create --base dev` cuando el branch es `feat/*`, `fix/*`, `chore/*` y no existe PR. En multi-repo: un PR por repo, nunca consolidado.
+- [templates/rules/branching.md](templates/rules/branching.md): nueva sección `Regla de sesión` al principio documentando que cada `/init` vuelve a `dev`, y sección `Normalización inicial` explicando el comportamiento automático del setup y de `/branches`.
+
+### Notas de migración
+- Workspaces ya configurados: correr `npx workspace-template update` propaga la nueva skill `/branches` y los skills actualizados (`init`, `apply`, `build`). La normalización del modelo de branches en repos existentes es **manual**: invocar `/branches` en cada repo. Esto es intencional — `update` no toca el estado Git, solo archivos bajo `.claude/`.
+
+---
+
 ## [1.0.6] — 2026-04-23
 
 Versión centrada en **resolución automática de credenciales de GitHub para colaboradores**: cuando un dev clona un repo que ya incorpora el workspace, los skills (`/init`, `/plan`, etc.) detectan automáticamente con qué cuenta tiene acceso al repo y no piden token manualmente. Elimina el bug donde el token equivocado quedaba cacheado permanentemente.

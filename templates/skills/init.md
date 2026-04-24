@@ -24,10 +24,51 @@ con creds embebidas, .claude-credentials, keychain del SO, y sesión de `gh`).
 Valida el token contra el repo antes de cachear. Si nada funciona, muestra
 instrucciones claras.
 
+### 0.5 Posicionarse en `dev` (obligatorio por sesión)
+
+**Regla del workspace:** cada sesión nueva arranca en `dev`. Esto no es una sugerencia
+— es la base de trabajo compartida entre features, y las skills siguientes (`/plan`,
+`/apply`, `/build`) asumen que estás ahí.
+
+Single-repo:
+```bash
+git fetch origin --prune
+
+if git ls-remote --heads origin dev | grep -q dev; then
+  git checkout dev 2>/dev/null || git checkout -b dev origin/dev
+  git pull --ff-only origin dev
+else
+  echo "⚠  No existe rama dev en remote."
+  echo "   Correr /branches para crearla antes de continuar."
+  exit 1
+fi
+```
+
+Multi-repo: aplicar el mismo checkout a **cada repo** listado en el `CLAUDE.md` del
+workspace. No dejar ningún repo en `main` o `master` al iniciar la sesión.
+
+```bash
+# Ejemplo (iterar sobre los repos del workspace):
+for repo in repos/*/; do
+  (cd "$repo" && git fetch origin --prune && \
+   git checkout dev 2>/dev/null || git checkout -b dev origin/dev && \
+   git pull --ff-only origin dev)
+done
+```
+
+**Excepción mid-chat:** si el dev pide explícitamente trabajar en `main` (ej. hotfix,
+pentest, revisión de prod), confirmar una sola vez:
+
+> "`main` es producción — solo hotfixes y auditorías van directo ahí. ¿Continuar?"
+
+Esa decisión **solo dura la sesión actual**. El próximo `/init` volverá a `dev`.
+
+Si `dev` no existe en el remote → invocar `/branches` para crearla y reiniciar `/init`.
+
 ### 1. Verificar estado del repo / workspace
 
 ```bash
-# Estado git
+# Estado git (ya en dev)
 git status
 git log --oneline -10
 
@@ -93,8 +134,10 @@ Según el estado detectado:
 - **Backlog vacío o necesitas decidir qué hacer** → `/plan` (crear nuevo issue)
 - **Otros devs hicieron cambios recientes** → `/sync` primero, luego `/plan` o `/apply`
 - **Hay un PR abierto esperando review** → `/review`
+- **No existe rama `dev` en el repo** → `/branches` para normalizar antes de continuar
 
 ## Notas
 
 - Si no hay issues asignados, sugerir revisar el backlog del GitHub Project.
 - Nunca asumir contexto de sesiones anteriores — siempre leer desde GitHub.
+- **Base por defecto: `dev`.** Cualquier trabajo en `main` requiere confirmación explícita del dev y no persiste al reiniciar la sesión.

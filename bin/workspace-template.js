@@ -39,6 +39,7 @@ import {
   setRepoRemoteWithCreds,
   isGitRepo,
   resolveCredsFromRepo,
+  ensureBranchModel,
 } from '../lib/github.js';
 import {
   generateClaudeDir,
@@ -230,6 +231,60 @@ async function askReposBatch() {
   }
 
   return entries;
+}
+
+/**
+ * Normaliza el modelo de branches de un repo (main + dev, staging opcional).
+ * Pensado para invocarse después de que el remote está configurado con creds del proyecto.
+ *
+ * @param {string} repoPath
+ * @param {{ owner: string, repo: string, token?: string, label?: string }} opts
+ */
+async function normalizeRepoBranches(repoPath, { owner, repo, token, label }) {
+  const prefix = label ? chalk.gray(`  [${label}] `) : chalk.gray('  ');
+  const spinner = ora(`${label ? `[${label}] ` : ''}Verificando modelo de branches...`).start();
+
+  try {
+    const report = await ensureBranchModel(repoPath, {
+      owner,
+      repo,
+      token,
+      promptRename: async (from, to) => {
+        spinner.stop();
+        const answer = await confirm({
+          message: `El repo "${repo}" usa "${from}" como branch principal. El estándar es "${to}". ¿Renombrar?`,
+          default: true,
+        });
+        spinner.start('Aplicando cambios de branches...');
+        return answer;
+      },
+      promptStaging: async () => {
+        spinner.stop();
+        console.log(chalk.gray(`${prefix}staging es opcional — útil para flujos con QA antes de producción.`));
+        const answer = await confirm({
+          message: `¿Crear también la rama "staging" en "${repo}"?`,
+          default: false,
+        });
+        spinner.start('Aplicando cambios de branches...');
+        return answer;
+      },
+    });
+
+    spinner.succeed(`${label ? `[${label}] ` : ''}Modelo de branches OK — default: ${chalk.bold(report.defaultBranch)}`);
+
+    if (report.renamedMasterToMain) console.log(chalk.green(`${prefix}✓ master renombrada a main`));
+    if (report.renameFailed)         console.log(chalk.yellow(`${prefix}⚠  no se pudo renombrar master (permisos) — se mantiene como base`));
+    if (report.devCreated)           console.log(chalk.green(`${prefix}✓ rama dev creada desde ${report.defaultBranch}`));
+    if (report.devAlreadyExisted)    console.log(chalk.gray(`${prefix}→ rama dev ya existía — se respeta`));
+    if (report.stagingCreated)       console.log(chalk.green(`${prefix}✓ rama staging creada desde ${report.defaultBranch}`));
+    if (report.stagingAlreadyExisted) console.log(chalk.gray(`${prefix}→ rama staging ya existía`));
+
+    return report;
+  } catch (err) {
+    spinner.fail(`${label ? `[${label}] ` : ''}No se pudo normalizar branches: ${err.message}`);
+    console.log(chalk.gray(`${prefix}El repo queda tal cual — puedes correr /branches después para normalizarlo.`));
+    return null;
+  }
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -528,6 +583,9 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
         if (updated) console.log(chalk.gray(`  → Remote origin actualizado con credenciales del proyecto`));
         await setGitUserLocal(repoPath, { name: ghUser });
       }
+
+      // Normalizar modelo de branches (main + dev obligatorio, staging opcional)
+      await normalizeRepoBranches(repoPath, { owner, repo: repoName, token: projectToken });
     } catch (err) {
       console.log(chalk.red(`✗ ${err.message}`));
       process.exit(1);
@@ -601,6 +659,11 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
       const updated = await setRepoRemoteWithCreds(repoPath, { username: ghUser, token: projectToken });
       if (updated) console.log(chalk.gray(`  → Remote origin reconfigurado con credenciales del proyecto`));
       await setGitUserLocal(repoPath, { name: ghUser });
+    }
+
+    // Normalizar modelo de branches (main + dev obligatorio, staging opcional)
+    if (owner && repoName) {
+      await normalizeRepoBranches(repoPath, { owner, repo: repoName, token: projectToken });
     }
 
   } else {
@@ -678,6 +741,9 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
         await execa('git', ['commit', '-m', 'chore(setup): initial workspace config'], { cwd: repoPath });
         await execa('git', ['push', '-u', 'origin', 'HEAD'], { cwd: repoPath });
         console.log(chalk.green('✓ Primer commit pusheado'));
+
+        // Normalizar modelo de branches (crea dev desde main)
+        await normalizeRepoBranches(repoPath, { owner: owner.trim(), repo: repoName, token: projectToken });
       } catch {
         console.log(chalk.yellow('⚠  No se pudo hacer el primer push. Hazlo manualmente.'));
       }
@@ -838,6 +904,11 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken }
         if (updated) console.log(chalk.gray(`  → Remote origin de "${repoName}" reconfigurado con credenciales del proyecto`));
         await setGitUserLocal(repoPath, { name: ghUser });
       }
+
+      // Normalizar modelo de branches del repo local
+      if (repoOwner && repoName) {
+        await normalizeRepoBranches(repoPath, { owner: repoOwner, repo: repoName, token: projectToken, label: repoName });
+      }
     } else {
       try {
         const { cleanUrl, username: urlUser, token: urlToken } = extractCredsFromUrl(entry.value);
@@ -872,6 +943,11 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken }
         const updated = await setRepoRemoteWithCreds(repoPath, { username: ghUser, token: projectToken });
         if (updated) console.log(chalk.gray(`  → Remote origin de "${repoName}" configurado con credenciales del proyecto`));
         await setGitUserLocal(repoPath, { name: ghUser });
+      }
+
+      // Normalizar modelo de branches del repo clonado
+      if (repoOwner && repoName) {
+        await normalizeRepoBranches(repoPath, { owner: repoOwner, repo: repoName, token: projectToken, label: repoName });
       }
     }
 
@@ -998,6 +1074,7 @@ const ALL_SKILLS = [
   { value: 'review',   name: '/review   — Revisar: code review del PR con perspectiva fresca',              checked: true  },
   { value: 'secure',   name: '/secure   — Validar: pre-deploy security checklist (env, secrets, deps)',     checked: true  },
   { value: 'deploy',   name: '/deploy   — Publicar: Dockerfile + GitHub Actions + .env.example',           checked: true  },
+  { value: 'branches', name: '/branches — Normalizar: main + dev (obligatoria) + staging opcional',        checked: true  },
   // — Comandos de soporte —
   { value: 'debug',    name: '/debug    — Depurar: analiza error/log, propone y aplica el fix',             checked: false },
   { value: 'audit',    name: '/audit    — Auditar: revisión OWASP profunda del código de aplicación',          checked: false },
