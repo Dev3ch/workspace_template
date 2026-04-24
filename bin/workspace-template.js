@@ -17,6 +17,7 @@ import {
 import { execa } from 'execa';
 
 import { checkEnvironment } from '../lib/detect-env.js';
+import { detectStacks, detectPort } from '../lib/stack-detect.js';
 import { showInstallInstructions, showPresentTools } from '../lib/installer.js';
 import { runEnvBootstrap } from '../lib/env-bootstrap.js';
 import {
@@ -150,6 +151,42 @@ async function askStacks(repoName) {
 /** Genera el label de stack para la tabla de repos */
 function stackLabel(stacks) {
   return stacks.map((s) => STACK_LABELS[s] ?? s).join(' + ');
+}
+
+/**
+ * Resuelve los stacks de un repo existente: intenta auto-detectar primero
+ * leyendo manifests (package.json, pyproject.toml, go.mod, etc).
+ * Si detecta algo, muestra al usuario y pregunta si confirmar o ajustar.
+ * Si no detecta nada, cae al flujo manual (askStacks).
+ *
+ * @param {string} repoPath
+ * @param {string} repoName
+ * @returns {string[]}
+ */
+async function resolveStacks(repoPath, repoName) {
+  const { stacks: detected, evidence } = detectStacks(repoPath);
+
+  if (detected.length === 0) {
+    console.log(chalk.gray(`  → No se detectaron stacks automáticamente en "${repoName}"`));
+    return askStacks(repoName);
+  }
+
+  const labels = detected.map((s) => STACK_LABELS[s] ?? s).join(', ');
+  console.log(chalk.green(`  ✓ Stacks detectados en "${repoName}": ${chalk.bold(labels)}`));
+  for (const s of detected) {
+    console.log(chalk.gray(`      ${s} → ${evidence[s].join(', ')}`));
+  }
+
+  const action = await select({
+    message: '¿Qué hacer con los stacks detectados?',
+    choices: [
+      { name: 'Usarlos tal cual (recomendado)',           value: 'keep' },
+      { name: 'Agregar o quitar alguno manualmente',      value: 'edit' },
+    ],
+  });
+
+  if (action === 'keep') return detected;
+  return askStacks(repoName);
 }
 
 /**
@@ -643,12 +680,15 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
     });
   }
 
+  // Auto-detectar puerto del proyecto existente (docker-compose, .env*)
+  const detectedPort = detectPort(repoPath);
   const port = await input({
     message: 'Puerto local (ej: 3000, 8000). Enter para omitir:',
-    default: '',
+    default: detectedPort ?? '',
   });
 
-  const stacks = await askStacks(repoName);
+  // Auto-detectar stacks del repo existente (package.json, pyproject.toml, go.mod, ...)
+  const stacks = await resolveStacks(repoPath, repoName);
 
   // Generar archivos
   const spinner = ora('Generando CLAUDE.md y estructura .claude/...').start();
@@ -817,8 +857,9 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken }
 
     console.log(chalk.bold.white(`\n[${i + 1}/${entries.length}] ${repoOwner}/${repoName}`));
     const role = await input({ message: `Rol de "${repoName}" (ej: API central, Frontend principal):` });
-    const port = await input({ message: 'Puerto local (o vacío si no aplica):', default: '' });
-    const stacks = await askStacks(repoName);
+    const detectedPort = detectPort(repoPath);
+    const port = await input({ message: 'Puerto local (o vacío si no aplica):', default: detectedPort ?? '' });
+    const stacks = await resolveStacks(repoPath, repoName);
 
     repos.push({
       name: repoName.trim(),
@@ -1029,14 +1070,110 @@ async function stepGithubProject(repoOwner, projectToken = null) {
     validate: (v) => v.trim().length > 0 || 'Requerido',
   });
 
+  return await createProjectWithRecovery(owner, projectTitle.trim(), projectToken);
+}
+
+/**
+ * Intenta crear un GitHub Project. Si falla, muestra un diagnóstico específico
+ * (permisos, scope del token, owner inválido) y ofrece opciones reales en vez
+ * de continuar con null:
+ *   - Crearlo manualmente y pegar el número/URL
+ *   - Probar con otro nombre/owner
+ *   - Usar un Project existente
+ *   - Cancelar el setup
+ *
+ * @param {string} owner
+ * @param {string} title
+ * @param {string|null} projectToken
+ * @returns {object|null}
+ */
+async function createProjectWithRecovery(owner, title, projectToken) {
   try {
-    const data = await createGithubProject(owner, projectTitle.trim(), projectToken);
+    const data = await createGithubProject(owner, title, projectToken);
     return { ...data, owner };
   } catch (err) {
-    console.log(chalk.yellow(`⚠  No se pudo crear el proyecto: ${err.message}`));
-    console.log(chalk.gray('  Puedes crearlo manualmente en https://github.com/orgs/' + owner + '/projects/new'));
-    return null;
+    const msg = err.message ?? '';
+    console.log(chalk.red('\n✗ No se pudo crear el GitHub Project'));
+    console.log(chalk.gray(`  Error: ${msg}\n`));
+
+    // Diagnóstico específico según el error
+    if (/does not have permission/i.test(msg) || /permission/i.test(msg)) {
+      console.log(chalk.bold.yellow('Causa probable: permisos insuficientes'));
+      console.log(chalk.white('  1. Tu token podría no tener el scope ') + chalk.cyan('project') + chalk.white(' activado.'));
+      console.log(chalk.gray('     Edítalo en: ') + chalk.cyan('https://github.com/settings/tokens'));
+      console.log(chalk.white(`  2. La organización "${owner}" puede restringir creación de Projects a owners/admins.`));
+      console.log(chalk.gray(`     Verifica tu rol en: https://github.com/orgs/${owner}/people\n`));
+    } else if (/not found|404/i.test(msg)) {
+      console.log(chalk.bold.yellow(`Causa probable: el owner "${owner}" no existe o tu token no tiene acceso\n`));
+    } else {
+      console.log(chalk.bold.yellow('Consulta el error arriba y GitHub para el detalle.\n'));
+    }
+
+    console.log(chalk.bold('Cómo crear el Project manualmente:'));
+    console.log(chalk.white(`  1. Abre: `) + chalk.cyan(`https://github.com/orgs/${owner}/projects/new`));
+    console.log(chalk.gray(`     (o https://github.com/users/${owner}/projects/new si es usuario personal)`));
+    console.log(chalk.white(`  2. Título sugerido: `) + chalk.cyan(title));
+    console.log(chalk.white(`  3. Template: `) + chalk.cyan('Team planning') + chalk.gray(' (o el que prefieras)'));
+    console.log(chalk.white(`  4. Una vez creado, copia el número o URL del Project\n`));
+
+    const next = await select({
+      message: '¿Qué prefieres hacer?',
+      choices: [
+        { name: 'Ya lo creé manualmente — ingresar número o URL ahora',     value: 'manual' },
+        { name: 'Elegir uno que ya existe en mi cuenta',                    value: 'pick' },
+        { name: 'Reintentar creación (ej: después de ajustar permisos)',    value: 'retry' },
+        { name: 'Continuar SIN GitHub Project — los skills que lo usan fallarán', value: 'skip' },
+        { name: 'Cancelar setup',                                           value: 'abort' },
+      ],
+    });
+
+    if (next === 'abort') {
+      console.log(chalk.yellow('\nSetup cancelado por el usuario.\n'));
+      process.exit(0);
+    }
+
+    if (next === 'skip') {
+      console.log(chalk.yellow('⚠  Continuando sin GitHub Project. Recuerda configurarlo después con /setup.\n'));
+      return null;
+    }
+
+    if (next === 'retry') {
+      return await createProjectWithRecovery(owner, title, projectToken);
+    }
+
+    if (next === 'manual') {
+      const raw = await input({
+        message: `Número o URL del Project recién creado:`,
+        validate: (v) => parseProjectInput(v) !== null || 'Debe ser un número (ej: 5) o URL (.../projects/N)',
+      });
+      const number = parseProjectInput(raw);
+      try {
+        const data = await getGithubProject(owner, number, projectToken);
+        console.log(chalk.green(`✓ Project vinculado: ${data.title} — ${data.url}`));
+        return { ...data, owner };
+      } catch (e) {
+        console.log(chalk.red(`✗ No se pudo leer el Project #${number}: ${e.message}`));
+        return await createProjectWithRecovery(owner, title, projectToken);
+      }
+    }
+
+    if (next === 'pick') {
+      const projects = await listGithubProjects(owner, projectToken);
+      if (projects.length === 0) {
+        console.log(chalk.yellow(`⚠  No se encontraron Projects para "${owner}".`));
+        return await createProjectWithRecovery(owner, title, projectToken);
+      }
+      const picked = await select({
+        message: 'Elige un GitHub Project existente:',
+        choices: projects.map((p) => ({ name: `#${p.number} — ${p.title}`, value: p.number })),
+      });
+      const data = projects.find((p) => p.number === picked);
+      console.log(chalk.green(`✓ Usando: ${data.title} — ${data.url}`));
+      return { ...data, owner };
+    }
   }
+
+  return null;
 }
 
 // ──────────────────────────────────────────────────────────────

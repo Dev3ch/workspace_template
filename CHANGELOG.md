@@ -8,6 +8,35 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.0.5] — 2026-04-23
+
+Versión centrada en **detección automática**, **respeto por `.gitignore`** y **manejo robusto de errores de GitHub Project**: el CLI deja de pedir al usuario datos que ya están en el código del repo, deja de mostrar directorios de dependencias/caches en el resumen final, y ya no sigue silenciosamente cuando algo crítico falla.
+
+### Added
+- Nuevo módulo [lib/stack-detect.js](lib/stack-detect.js) con dos detectores:
+  - `detectStacks(repoPath)` — identifica stacks leyendo `package.json` (next, nuxt, react-native, vue, react), `pyproject.toml`/`requirements.txt`/`Pipfile` (django, fastapi), `manage.py` (django), `go.mod` (go), `pubspec.yaml` (flutter). Devuelve la evidencia por stack.
+  - `detectPort(repoPath)` — extrae el puerto local desde `docker-compose*.yml` o variables `PORT=` en `.env*`.
+- Nuevo helper `resolveStacks(repoPath, repoName)` en el CLI: si el repo ya tiene código, muestra los stacks detectados con su evidencia y pregunta si aceptarlos o editarlos manualmente. Si no detecta nada, cae al flujo manual.
+- Lista `ALWAYS_HIDE_DIRS` en `printGeneratedTree` que oculta siempre `node_modules`, `.venv`, `__pycache__`, `.next`, `dist`, `build`, `target`, `vendor`, `.cache`, `.turbo`, `.dart_tool`, `.expo`, etc. — aunque `.gitignore` sea incompleto o inexistente.
+- Nuevo helper `createProjectWithRecovery` en el Paso 5: cuando `gh project create` falla, el CLI muestra un diagnóstico específico del error (permisos insuficientes, scope `project` faltante en el token, owner inválido) y ofrece 5 opciones reales: ingresar número/URL de un Project recién creado manualmente, elegir uno existente, reintentar, continuar sin Project (con advertencia de que skills dependientes fallarán), o cancelar el setup completo.
+
+### Changed
+- **Single-repo (github y local)**: ya no se pregunta el stack ni el puerto ciegamente. Se auto-detectan del código existente y solo se pide confirmación o edición.
+- **Multi-repo**: cada repo del batch auto-detecta su stack y puerto antes de pedir ajustes al usuario.
+- **Scratch (desde cero)**: conserva el flujo manual de `askStacks` — es el único caso donde no hay código que analizar.
+- `printGeneratedTree(rootPath, opts)` ahora:
+  - Usa `git ls-files --cached --others --exclude-standard` cuando el path es un repo git — respeta automáticamente `.gitignore` sin reimplementar su parser.
+  - Tiene fallback con walker manual + lista de dirs siempre ocultos para proyectos sin `.git/`.
+  - Acepta `opts.maxDepth` (default 3) para no abrumar con árboles gigantes.
+  - Marca directorios con `/` al final.
+- Paso 5 (GitHub Project): cuando falla la creación, el CLI muestra instrucciones paso a paso para crear el Project en la UI de GitHub (URL exacta de orgs/users, título sugerido, template recomendado) y pausa para que el usuario lo resuelva sin abandonar el CLI.
+
+### Fixed
+- El resumen final ya no muestra `node_modules/`, `.venv/`, `__pycache__/`, archivos `.pyi` de librerías Python instaladas, ni ningún contenido ignorado por `.gitignore`. Solo aparece lo que pertenece al proyecto.
+- El setup ya no termina con un "Todo listo" engañoso cuando `gh project create` falló. El resumen solo se muestra si el workspace quedó **realmente completo** o si el usuario eligió explícitamente continuar sin Project.
+
+---
+
 ## [1.0.4] — 2026-04-23
 
 Versión centrada en credenciales de GitHub **por proyecto**: permite trabajar con múltiples cuentas de GitHub en la misma máquina sin tocar la configuración global.
@@ -192,7 +221,8 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/Dev3ch/workspace_template/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/Dev3ch/workspace_template/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/Dev3ch/workspace_template/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/Dev3ch/workspace_template/compare/v1.0.1...v1.0.2
