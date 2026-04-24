@@ -8,6 +8,61 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.0.4] — 2026-04-23
+
+Versión centrada en credenciales de GitHub **por proyecto**: permite trabajar con múltiples cuentas de GitHub en la misma máquina sin tocar la configuración global.
+
+### Added
+
+#### Autenticación por proyecto (nuevo flujo en Paso 2)
+- Detección automática de `gh` CLI: si no está instalado, se puede configurar el proyecto usando solo un token (validado con `curl` contra la API de GitHub).
+- Tres caminos de autenticación según el estado del sistema: usar sesión global de `gh`, ingresar token por proyecto, o ejecutar `gh auth login`.
+- Validación de token antes de aceptarlo (llamada real a `/user` de la API de GitHub), con reintento automático en caso de error.
+- Extracción automática de credenciales embebidas en URLs (`https://user:token@github.com/owner/repo.git`) — el CLI parsea el user y token y los usa para el proyecto sin pedirlos de nuevo.
+- Validación preflight: tokens extraídos de URLs se validan antes de clonar, evitando escribir `.env.local` con credenciales inválidas.
+
+#### Persistencia de credenciales por proyecto
+- `saveProjectGithubCredentials()` escribe `GITHUB_USER` y `GH_TOKEN` en `.env.local` del repo, preservando cualquier variable existente (no sobrescribe el archivo).
+- `.env.local` se agrega automáticamente a `.gitignore` (o se crea si no existe).
+- En multi-repo, las credenciales se guardan en `.env.local` de **cada** repo individual, no solo en la raíz del workspace.
+- `git config user.name` local se configura siempre en cada repo, evitando que commits accidentales usen la identidad global del sistema.
+
+#### Resolución de conflictos entre cuentas
+- Detección automática cuando un repo local tiene `origin` apuntando a un owner distinto al `ghUser` activo: el CLI avisa del conflicto y ofrece ingresar un token para resolver.
+- En multi-repo, un token ingresado mid-batch para resolver un conflicto se propaga al resto de repos del batch.
+- `setRepoRemoteWithCreds()` reescribe el remote `origin` en `.git/config` local (no global), embebiendo `user:token@` en la URL HTTPS. Los remotes SSH se dejan intactos.
+
+#### Robustez y UX
+- Nueva función `isGitRepo()` detecta si un path es un repositorio git válido. En single-repo ofrece `git init` si no lo es; en multi-repo los salta con aviso.
+- Tracker global de directorios creados (`createdResources.dirs`) permite limpieza automática al cancelar el setup con Ctrl+C. Solo se eliminan directorios que este setup creó; los preexistentes nunca se tocan.
+- Handler `SIGINT` + catch de `ExitPromptError` + catch de errores inesperados, todos con limpieza de estado parcial antes de salir.
+- Enmascaramiento (`maskUrlCreds`) de credenciales en todos los logs, spinners y mensajes de error — el token nunca aparece en la terminal.
+- `gh project create`, `gh project view` y `gh project list` aceptan un token opcional y lo usan via `GH_TOKEN` env cuando hay credenciales por proyecto.
+
+#### Documentación
+- Nuevo archivo [docs/flujo-autenticacion.md](docs/flujo-autenticacion.md) con 8 secciones y diagramas Mermaid renderizables:
+  - Flujo maestro del setup completo.
+  - Paso 2 (autenticación) en detalle con todas las ramas.
+  - Subdiagrama de validación de token.
+  - Single-repo (3 caminos: github/local/scratch).
+  - Multi-repo (batch con propagación de token).
+  - Persistencia final.
+  - Matriz de 15 casos cubiertos con resultados esperados.
+  - Manejo de interrupciones y cleanup.
+
+### Changed
+- Paso 2 reemplazado completamente: el antiguo flujo que solo verificaba `gh auth status` global ahora ofrece autenticación por proyecto como primera opción.
+- `cloneRepo()` acepta un objeto de credenciales opcional y embebe `user:token@` en la URL HTTPS cuando aplica. Los spinners y errores muestran la URL enmascarada.
+- Prompt de selección de cuenta global ahora muestra explícitamente las dos opciones (Opción A: sesión global sin `.env.local` — Opción B: token por proyecto con `.env.local`) para que la decisión sea clara.
+- Hint de uso del token en el resumen final: reemplazado `grep GH_TOKEN .env.local | cut -d= -f2` por `source .env.local` o `env $(cat .env.local) gh <comando>`.
+
+### Fixed
+- `.env.local` preserva comentarios y líneas vacías existentes (antes `filter(Boolean)` las eliminaba).
+- Identidad de git en commits: `setGitUserLocal()` ahora se aplica incluso cuando se usa sesión global (no solo con token por proyecto), evitando commits con identidad cruzada.
+- En multi-repo, `.env.local` con credenciales se escribe en **cada repo** del workspace, no solo en la raíz (antes si alguien clonaba un repo individual después, no tenía credenciales).
+
+---
+
 ## [1.0.3] — 2026-04-23
 
 ### Added
@@ -137,7 +192,8 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/Dev3ch/workspace_template/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/Dev3ch/workspace_template/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/Dev3ch/workspace_template/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Dev3ch/workspace_template/compare/v1.0.0...v1.0.1

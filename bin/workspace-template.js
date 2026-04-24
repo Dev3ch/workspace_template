@@ -21,6 +21,11 @@ import { showInstallInstructions, showPresentTools } from '../lib/installer.js';
 import { runEnvBootstrap } from '../lib/env-bootstrap.js';
 import {
   checkGhAuth,
+  isGhInstalled,
+  validateGithubToken,
+  validateTokenWithCurl,
+  saveProjectGithubCredentials,
+  setGitUserLocal,
   cloneRepo,
   createGithubProject,
   getGithubProject,
@@ -29,6 +34,9 @@ import {
   parseProjectInput,
   getRemoteOrigin,
   showGhAuthHelp,
+  extractCredsFromUrl,
+  setRepoRemoteWithCreds,
+  isGitRepo,
 } from '../lib/github.js';
 import {
   generateClaudeDir,
@@ -39,6 +47,52 @@ import {
 } from '../lib/workspace-gen.js';
 import { askMcpIntegrations, mergeMcpConfig } from '../lib/mcp-tools.js';
 import { runUpdate, getCurrentPackageVersion, saveGithubProject } from '../lib/updater.js';
+
+// ──────────────────────────────────────────────────────────────
+// CLEANUP — estado de recursos creados por el setup
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Tracker de directorios creados por el setup. Si el usuario cancela,
+ * se pueden limpiar los directorios parciales (clones incompletos,
+ * carpetas recién creadas) sin tocar nada preexistente.
+ */
+const createdResources = {
+  dirs: new Set(),    // directorios creados por nosotros (candidatos a limpiar)
+  abortRequested: false,
+};
+
+function trackCreatedDir(dirPath) {
+  createdResources.dirs.add(path.resolve(dirPath));
+}
+
+async function cleanupPartialState() {
+  if (createdResources.dirs.size === 0) return;
+  console.log(chalk.yellow('\n⚠  Limpiando recursos parciales...'));
+  for (const dir of createdResources.dirs) {
+    try {
+      if (fs.existsSync(dir)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.log(chalk.gray(`  → eliminado: ${dir}`));
+      }
+    } catch (err) {
+      console.log(chalk.red(`  ✗ no se pudo eliminar ${dir}: ${err.message}`));
+    }
+  }
+}
+
+// Captura Ctrl+C global — limpia recursos parciales y sale
+process.on('SIGINT', async () => {
+  if (createdResources.abortRequested) {
+    // Doble Ctrl+C — salida dura
+    process.exit(130);
+  }
+  createdResources.abortRequested = true;
+  console.log(chalk.yellow('\n\n⚠  Ctrl+C detectado — cancelando setup...'));
+  await cleanupPartialState();
+  console.log(chalk.yellow('Saliendo.\n'));
+  process.exit(130);
+});
 
 // ──────────────────────────────────────────────────────────────
 // HELPERS
@@ -161,27 +215,161 @@ async function stepEnvCheck() {
 // PASO 2 — GitHub Token / Auth
 // ──────────────────────────────────────────────────────────────
 
+/**
+ * Valida un token ya obtenido (ej: extraído de una URL) antes de usarlo.
+ * Si es inválido, ofrece reingresar uno. Devuelve { username, token } válidos
+ * o null si el usuario decide continuar sin token.
+ *
+ * @param {string} token
+ * @param {string|null} expectedUsername - opcional, para advertir si cambia
+ * @returns {{ username: string, token: string } | null}
+ */
+async function preflightTokenValidation(token, expectedUsername = null) {
+  const ghAvailable = await isGhInstalled();
+  const spinner = ora('Validando token...').start();
+  const result = ghAvailable
+    ? await validateGithubToken(token)
+    : await validateTokenWithCurl(token);
+
+  if (result.valid) {
+    spinner.succeed(`Token válido — cuenta: ${chalk.bold(result.user)}`);
+    if (expectedUsername && result.user.toLowerCase() !== expectedUsername.toLowerCase()) {
+      console.log(chalk.yellow(`  ⚠  El token pertenece a "${result.user}" pero el username esperado era "${expectedUsername}"`));
+    }
+    return { username: result.user, token };
+  }
+
+  spinner.fail('Token inválido o expirado');
+  const retry = await confirm({
+    message: '¿Ingresar un token nuevo?',
+    default: true,
+  });
+  if (!retry) return null;
+
+  return await askAndValidateToken(ghAvailable);
+}
+
+/**
+ * Pide y valida un GitHub Personal Access Token.
+ * Si gh está disponible lo valida con la API; si no, usa curl.
+ * @param {boolean} ghAvailable
+ * @returns {{ username: string, token: string }}
+ */
+async function askAndValidateToken(ghAvailable) {
+  console.log(chalk.gray('\nNecesitas un GitHub Personal Access Token con scopes: repo, read:org, project'));
+  console.log(chalk.cyan('  Créalo en: https://github.com/settings/tokens/new\n'));
+
+  while (true) {
+    const token = await input({
+      message: 'Pega tu GitHub Personal Access Token (ghp_...):',
+      validate: (v) => v.trim().length > 10 || 'El token parece inválido',
+    });
+
+    const trimmed = token.trim();
+    const spinner = ora('Validando token...').start();
+
+    const result = ghAvailable
+      ? await validateGithubToken(trimmed)
+      : await validateTokenWithCurl(trimmed);
+
+    if (result.valid) {
+      spinner.succeed(`Token válido — cuenta: ${chalk.bold(result.user)}`);
+      return { username: result.user, token: trimmed };
+    } else {
+      spinner.fail('Token inválido o sin permisos suficientes. Intenta de nuevo.');
+    }
+  }
+}
+
 async function stepGithubAuth() {
   console.log(chalk.bold.cyan('═══ Paso 2 — Autenticación GitHub ═══\n'));
 
-  let { authenticated, user } = await checkGhAuth();
+  const ghInstalled = await isGhInstalled();
 
-  if (!authenticated) {
-    showGhAuthHelp(chalk);
-    await pressEnter('Cuando hayas terminado de autenticarte, presiona Enter para continuar...');
+  if (ghInstalled) {
+    // gh está instalado — verificar si ya hay sesión activa
+    const { authenticated, user } = await checkGhAuth();
 
-    const result = await checkGhAuth();
-    authenticated = result.authenticated;
-    user = result.user;
+    if (authenticated) {
+      console.log(chalk.green(`✓ gh CLI detectado — sesión activa: ${chalk.bold(user)}`));
+      console.log(chalk.gray('  Opción A: usar esta sesión global (no crea .env.local, usa config del sistema)'));
+      console.log(chalk.gray('  Opción B: token por proyecto (aísla credenciales en .env.local, no toca tu sesión global)\n'));
 
-    if (!authenticated) {
-      console.log(chalk.red('✗ Aún no autenticado. Por favor completa gh auth login.'));
-      process.exit(1);
+      const useExisting = await confirm({
+        message: `¿Usar la cuenta global "${user}" para este proyecto?`,
+        default: true,
+      });
+
+      if (useExisting) {
+        console.log(chalk.green(`✓ Usando cuenta global: ${chalk.bold(user)}\n`));
+        // Sin token de proyecto — se usará la sesión global de gh
+        return { ghUser: user, projectToken: null };
+      }
+    } else {
+      console.log(chalk.yellow('⚠  gh CLI instalado pero sin sesión activa.'));
     }
-  }
 
-  console.log(chalk.green(`✓ Autenticado como: ${chalk.bold(user ?? 'desconocido')}\n`));
-  return user;
+    // Quiere configurar cuenta diferente (o no hay sesión)
+    console.log(chalk.bold('\n¿Cómo quieres configurar GitHub para este proyecto?\n'));
+    const authMode = await select({
+      message: 'Modo de autenticación:',
+      choices: [
+        { name: 'Token por proyecto  (recomendado — solo aplica a este proyecto)', value: 'project-token' },
+        { name: 'gh auth login       (cambia la sesión global de gh CLI)',          value: 'gh-login' },
+      ],
+    });
+
+    if (authMode === 'gh-login') {
+      showGhAuthHelp(chalk);
+      await pressEnter('Cuando hayas completado gh auth login, presiona Enter...');
+      const result = await checkGhAuth();
+      if (!result.authenticated) {
+        console.log(chalk.red('✗ Aún no autenticado. Abortando.'));
+        process.exit(1);
+      }
+      console.log(chalk.green(`✓ Autenticado globalmente como: ${chalk.bold(result.user)}\n`));
+      return { ghUser: result.user, projectToken: null };
+    }
+
+    // project-token
+    const creds = await askAndValidateToken(true);
+    return { ghUser: creds.username, projectToken: creds.token };
+
+  } else {
+    // gh NO está instalado
+    console.log(chalk.yellow('⚠  gh CLI no está instalado en este sistema.\n'));
+
+    const installChoice = await select({
+      message: '¿Qué quieres hacer?',
+      choices: [
+        { name: 'Configurar solo para este proyecto (con token — no instala nada)',    value: 'project-token' },
+        { name: 'Instalar gh CLI globalmente y luego autenticarme',                    value: 'install-gh' },
+      ],
+    });
+
+    if (installChoice === 'install-gh') {
+      console.log(chalk.bold('\nInstala gh CLI desde: ') + chalk.cyan('https://cli.github.com/'));
+      console.log(chalk.gray('  Linux:   sudo apt install gh  |  brew install gh'));
+      console.log(chalk.gray('  Windows: winget install GitHub.cli\n'));
+      await pressEnter('Cuando hayas instalado y ejecutado gh auth login, presiona Enter...');
+
+      const nowInstalled = await isGhInstalled();
+      if (!nowInstalled) {
+        console.log(chalk.red('✗ gh CLI aún no detectado. Continuando solo con token de proyecto.'));
+      } else {
+        const result = await checkGhAuth();
+        if (result.authenticated) {
+          console.log(chalk.green(`✓ gh CLI listo — autenticado como: ${chalk.bold(result.user)}\n`));
+          return { ghUser: result.user, projectToken: null };
+        }
+        console.log(chalk.yellow('⚠  gh instalado pero sin sesión. Configura con token de proyecto.'));
+      }
+    }
+
+    // project-token (sin gh)
+    const creds = await askAndValidateToken(false);
+    return { ghUser: creds.username, projectToken: creds.token };
+  }
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -212,7 +400,7 @@ async function stepProjectType() {
 // PASO 4a — Single repo
 // ──────────────────────────────────────────────────────────────
 
-async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
+async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken } = {}) {
   console.log(chalk.bold.cyan('\n═══ Paso 4 — Configuración single-repo ═══\n'));
 
   const repoOrigin = await select({
@@ -250,14 +438,36 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
     });
 
     try {
-      const parsed = parseGithubUrl(repoUrl.trim());
+      // Extraer creds embebidas si la URL tiene formato user:token@github.com
+      const { cleanUrl, username: urlUser, token: urlToken } = extractCredsFromUrl(repoUrl.trim());
+      if (urlUser && urlToken) {
+        console.log(chalk.gray(`  → Credenciales detectadas en la URL — validando...`));
+        const validated = await preflightTokenValidation(urlToken, urlUser);
+        if (validated) {
+          ghUser = validated.username;
+          projectToken = validated.token;
+          console.log(chalk.green(`✓ Usando credenciales del token — usuario: ${chalk.bold(ghUser)}`));
+        } else {
+          console.log(chalk.yellow('  ⚠  Continuando sin credenciales extraídas — el clone podría fallar si el repo es privado'));
+        }
+      }
+
+      const parsed = parseGithubUrl(cleanUrl);
       owner = parsed.owner;
       repoName = parsed.repo;
       repoPath = path.join(path.resolve(destParent.trim()), repoName);
       if (fs.existsSync(repoPath)) {
         console.log(chalk.gray(`  → Ya existe localmente en ${repoPath} — se usa tal cual`));
       } else {
-        await cloneRepo(repoUrl.trim(), repoPath);
+        trackCreatedDir(repoPath);
+        await cloneRepo(cleanUrl, repoPath, { username: ghUser, token: projectToken });
+      }
+
+      // Fijar remote local con creds del proyecto (sin tocar config global)
+      if (projectToken) {
+        const updated = await setRepoRemoteWithCreds(repoPath, { username: ghUser, token: projectToken });
+        if (updated) console.log(chalk.gray(`  → Remote origin actualizado con credenciales del proyecto`));
+        await setGitUserLocal(repoPath, { name: ghUser });
       }
     } catch (err) {
       console.log(chalk.red(`✗ ${err.message}`));
@@ -274,6 +484,22 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
     });
     repoPath = path.resolve(repoPath.trim());
 
+    // Validar que el path sea un repo git inicializado
+    if (!isGitRepo(repoPath)) {
+      console.log(chalk.yellow(`⚠  "${repoPath}" existe pero no es un repositorio git (no tiene .git/).`));
+      const initNow = await confirm({
+        message: '¿Inicializar git en esta carpeta?',
+        default: false,
+      });
+      if (initNow) {
+        await execa('git', ['init'], { cwd: repoPath });
+        console.log(chalk.green(`✓ git init ejecutado en ${repoPath}`));
+      } else {
+        console.log(chalk.red('✗ Abortando — no se puede configurar workspace sin repo git.'));
+        process.exit(1);
+      }
+    }
+
     const remoteUrl = await getRemoteOrigin(repoPath);
     if (remoteUrl) {
       try {
@@ -281,11 +507,41 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
         owner = parsed.owner;
         repoName = parsed.repo;
         console.log(chalk.gray(`  → Detectado: ${owner}/${repoName}`));
+
+        // Detectar conflicto: el remote pertenece a un owner distinto al usuario actual
+        // y no tenemos token de proyecto para resolverlo
+        if (!projectToken && owner.toLowerCase() !== ghUser?.toLowerCase()) {
+          console.log(chalk.yellow(
+            `\n  ⚠  El remote origin pertenece a "${owner}" pero tu sesión activa es "${ghUser}".`
+          ));
+          console.log(chalk.gray('  Para hacer push/pull correctamente necesitas un token de esa cuenta.\n'));
+
+          const wantsToken = await confirm({
+            message: `¿Quieres ingresar un token para "${owner}" ahora?`,
+            default: true,
+          });
+
+          if (wantsToken) {
+            const ghInstalled = await isGhInstalled();
+            const creds = await askAndValidateToken(ghInstalled);
+            projectToken = creds.token;
+            ghUser = creds.username;
+          } else {
+            console.log(chalk.yellow('  ⚠  Continuando sin reconfigurar — push/pull puede fallar si las cuentas no coinciden.'));
+          }
+        }
       } catch {
         console.log(chalk.yellow('  ⚠  No se detectó remote de GitHub — te pediré el owner y repo manualmente'));
       }
     } else {
       console.log(chalk.yellow('  ⚠  No se detectó remote de GitHub — te pediré el owner y repo manualmente'));
+    }
+
+    // Sobrescribir remote con creds del proyecto para evitar conflicto con cuenta global
+    if (projectToken) {
+      const updated = await setRepoRemoteWithCreds(repoPath, { username: ghUser, token: projectToken });
+      if (updated) console.log(chalk.gray(`  → Remote origin reconfigurado con credenciales del proyecto`));
+      await setGitUserLocal(repoPath, { name: ghUser });
     }
 
   } else {
@@ -312,6 +568,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
 
     const spinnerInit = ora('Inicializando proyecto...').start();
     try {
+      trackCreatedDir(repoPath);
       if (templateUrl) {
         // Clonar template y desconectar del remote original
         await execa('git', ['clone', templateUrl, repoPath]);
@@ -326,8 +583,16 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
       // Crear repo en GitHub y conectarlo
       const repoSpinner = ora(`Creando repo ${owner}/${repoName} en GitHub...`).start();
       try {
-        await execa('gh', ['repo', 'create', `${owner}/${repoName}`, '--private', '--source', repoPath, '--remote', 'origin']);
+        const ghEnv = projectToken ? { ...process.env, GH_TOKEN: projectToken } : process.env;
+        await execa('gh', ['repo', 'create', `${owner}/${repoName}`, '--private', '--source', repoPath, '--remote', 'origin'], { env: ghEnv });
         repoSpinner.succeed(`Repo creado: https://github.com/${owner}/${repoName}`);
+
+        // Reescribir remote con creds para que push/pull no usen cuenta global
+        if (projectToken) {
+          await setRepoRemoteWithCreds(repoPath, { username: ghUser, token: projectToken });
+          await setGitUserLocal(repoPath, { name: ghUser });
+          console.log(chalk.gray(`  → Remote origin configurado con credenciales del proyecto`));
+        }
       } catch (err) {
         repoSpinner.fail(`No se pudo crear el repo en GitHub: ${err.stderr ?? err.message}`);
         console.log(chalk.gray('  Puedes crearlo después con: gh repo create'));
@@ -420,7 +685,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
 // PASO 4b — Multi repo
 // ──────────────────────────────────────────────────────────────
 
-async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
+async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken } = {}) {
   console.log(chalk.bold.cyan('\n═══ Paso 4 — Configuración multi-repo ═══\n'));
 
   const workspaceName = await input({
@@ -438,7 +703,9 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
   });
 
   const workspacePath = path.join(path.resolve(workspaceParent.trim()), workspaceName.trim());
+  const workspaceExisted = fs.existsSync(workspacePath);
   fs.mkdirSync(workspacePath, { recursive: true });
+  if (!workspaceExisted) trackCreatedDir(workspacePath);
   console.log(chalk.gray(`  → Workspace: ${workspacePath}`));
 
   const owner = await input({
@@ -466,31 +733,83 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig } = {}) {
 
     if (entry.kind === 'path') {
       repoPath = entry.value;
+
+      if (!isGitRepo(repoPath)) {
+        console.log(chalk.yellow(`  ⚠  "${repoPath}" no es un repo git — se salta`));
+        continue;
+      }
+
       const remoteUrl = await getRemoteOrigin(repoPath);
       if (remoteUrl) {
         try {
           const parsed = parseGithubUrl(remoteUrl);
           repoOwner = parsed.owner;
           repoName = parsed.repo;
+
+          // Detectar conflicto de cuentas en repo local sin token
+          if (!projectToken && repoOwner.toLowerCase() !== ghUser?.toLowerCase()) {
+            console.log(chalk.yellow(
+              `\n  ⚠  "${repoName}": el remote pertenece a "${repoOwner}" pero tu sesión es "${ghUser}".`
+            ));
+            const wantsToken = await confirm({
+              message: `¿Ingresar un token para "${repoOwner}" y usarlo en todos los repos restantes?`,
+              default: true,
+            });
+            if (wantsToken) {
+              const ghInstalled = await isGhInstalled();
+              const creds = await askAndValidateToken(ghInstalled);
+              projectToken = creds.token;
+              ghUser = creds.username;
+            } else {
+              console.log(chalk.yellow('  ⚠  Continuando sin reconfigurar.'));
+            }
+          }
         } catch {
           // sin detección — pedir nombre después
         }
       }
       if (!repoName) repoName = path.basename(repoPath);
+
+      // Repo local existente: reconfigurar remote si hay token de proyecto
+      if (projectToken) {
+        const updated = await setRepoRemoteWithCreds(repoPath, { username: ghUser, token: projectToken });
+        if (updated) console.log(chalk.gray(`  → Remote origin de "${repoName}" reconfigurado con credenciales del proyecto`));
+        await setGitUserLocal(repoPath, { name: ghUser });
+      }
     } else {
       try {
-        const parsed = parseGithubUrl(entry.value);
+        const { cleanUrl, username: urlUser, token: urlToken } = extractCredsFromUrl(entry.value);
+        if (urlUser && urlToken) {
+          console.log(chalk.gray(`  → Credenciales detectadas en URL del repo ${repoName ?? ''} — validando...`));
+          const validated = await preflightTokenValidation(urlToken, urlUser);
+          if (validated) {
+            projectToken = validated.token;
+            ghUser = validated.username;
+          } else {
+            console.log(chalk.yellow('  ⚠  Continuando sin las credenciales de esta URL'));
+          }
+        }
+        const parsed = parseGithubUrl(cleanUrl);
         repoOwner = parsed.owner;
         repoName = parsed.repo;
         repoPath = path.join(workspacePath, repoName);
+        entry.value = cleanUrl;
       } catch (err) {
         console.log(chalk.red(`✗ ${err.message} — se salta`));
         continue;
       }
       if (!fs.existsSync(repoPath)) {
-        await cloneRepo(entry.value, repoPath);
+        trackCreatedDir(repoPath);
+        await cloneRepo(entry.value, repoPath, { username: ghUser, token: projectToken });
       } else {
         console.log(chalk.gray(`  → ${repoName} ya existe en ${repoPath} — se usa tal cual`));
+      }
+
+      // Fijar remote con creds del proyecto en cada repo clonado/existente
+      if (projectToken) {
+        const updated = await setRepoRemoteWithCreds(repoPath, { username: ghUser, token: projectToken });
+        if (updated) console.log(chalk.gray(`  → Remote origin de "${repoName}" configurado con credenciales del proyecto`));
+        await setGitUserLocal(repoPath, { name: ghUser });
       }
     }
 
@@ -646,7 +965,7 @@ async function stepSkillsSelection() {
 // PASO 5 — GitHub Project (opcional)
 // ──────────────────────────────────────────────────────────────
 
-async function stepGithubProject(repoOwner) {
+async function stepGithubProject(repoOwner, projectToken = null) {
   console.log(chalk.bold.cyan('\n═══ Paso 5 — GitHub Project ═══\n'));
   console.log(chalk.gray('Un GitHub Project es el tablero donde viven los issues y el estado del workspace.\n'));
 
@@ -677,7 +996,7 @@ async function stepGithubProject(repoOwner) {
     });
     const number = parseProjectInput(raw);
     try {
-      const data = await getGithubProject(owner, number);
+      const data = await getGithubProject(owner, number, projectToken);
       console.log(chalk.green(`✓ Project encontrado: ${data.title} — ${data.url}`));
       return { ...data, owner };
     } catch (err) {
@@ -687,7 +1006,7 @@ async function stepGithubProject(repoOwner) {
   }
 
   if (action === 'pick') {
-    const projects = await listGithubProjects(owner);
+    const projects = await listGithubProjects(owner, projectToken);
     if (projects.length === 0) {
       console.log(chalk.yellow(`⚠  No se encontraron projects para ${owner}. Intenta crear uno nuevo.`));
       return null;
@@ -711,7 +1030,7 @@ async function stepGithubProject(repoOwner) {
   });
 
   try {
-    const data = await createGithubProject(owner, projectTitle.trim());
+    const data = await createGithubProject(owner, projectTitle.trim(), projectToken);
     return { ...data, owner };
   } catch (err) {
     console.log(chalk.yellow(`⚠  No se pudo crear el proyecto: ${err.message}`));
@@ -724,7 +1043,7 @@ async function stepGithubProject(repoOwner) {
 // PASO 6 — Resumen final
 // ──────────────────────────────────────────────────────────────
 
-function stepSummary({ rootPath, projectData, projectType }) {
+function stepSummary({ rootPath, projectData, projectType, hasProjectToken = false }) {
   console.log(chalk.bold.cyan('\n═══ Resumen — Todo listo ═══\n'));
 
   console.log(chalk.bold('Estructura generada:\n'));
@@ -755,6 +1074,13 @@ function stepSummary({ rootPath, projectData, projectType }) {
     console.log(chalk.cyan(`       ${projectData.url}`));
     console.log('');
   }
+  if (hasProjectToken) {
+    console.log(chalk.bold('Token de GitHub por proyecto:'));
+    console.log(chalk.gray('  Guardado en .env.local (ignorado por git). Para usar gh CLI en este proyecto:'));
+    console.log(chalk.cyan('    set -a && source .env.local && set +a'));
+    console.log(chalk.gray('  O en un solo comando:'));
+    console.log(chalk.cyan('    env $(cat .env.local) gh <comando>\n'));
+  }
   console.log(chalk.bold.green('¡Workspace configurado correctamente! 🚀\n'));
 }
 
@@ -763,8 +1089,12 @@ function stepSummary({ rootPath, projectData, projectType }) {
 // ──────────────────────────────────────────────────────────────
 
 async function main() {
+  const version = getCurrentPackageVersion();
+  const innerWidth = 39; // ancho entre los bordes ║
+  const content = `     workspace-template  v${version}`;
+  const versionLine = `║${content}${' '.repeat(Math.max(1, innerWidth - content.length))}║`;
   console.log(chalk.bold.magenta('\n╔═══════════════════════════════════════╗'));
-  console.log(chalk.bold.magenta('║     workspace-template  v1.0.0        ║'));
+  console.log(chalk.bold.magenta(versionLine));
   console.log(chalk.bold.magenta('║  Claude Code Workspace Setup CLI      ║'));
   console.log(chalk.bold.magenta('╚═══════════════════════════════════════╝\n'));
 
@@ -772,7 +1102,7 @@ async function main() {
   await stepEnvCheck();
 
   // Paso 2
-  const ghUser = await stepGithubAuth();
+  const { ghUser, projectToken } = await stepGithubAuth();
 
   // Paso 3
   const projectType = await stepProjectType();
@@ -788,19 +1118,35 @@ async function main() {
 
   let rootPath;
   let owner;
+  let allRepoPaths = [];
 
   if (projectType === 'single') {
-    const result = await stepSingleRepo(ghUser, { selectedSkills, mcpConfig });
+    const result = await stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken });
     rootPath = result.repoPath;
     owner = result.owner;
+    allRepoPaths = [result.repoPath];
   } else {
-    const result = await stepMultiRepo(ghUser, { selectedSkills, mcpConfig });
+    const result = await stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken });
     rootPath = result.workspacePath;
     owner = result.owner;
+    allRepoPaths = [result.workspacePath, ...result.repos.map((r) => r.repoPath)];
+  }
+
+  // Siempre fijar git user.name local en cada repo (evita que commits usen identidad global)
+  for (const p of allRepoPaths) {
+    await setGitUserLocal(p, { name: ghUser });
+  }
+
+  // Guardar credenciales en .env.local en cada repo cuando hay token de proyecto
+  if (projectToken) {
+    for (const p of allRepoPaths) {
+      saveProjectGithubCredentials(p, { username: ghUser, token: projectToken });
+    }
+    console.log(chalk.green(`✓ Credenciales guardadas en .env.local de ${allRepoPaths.length} ubicación(es) — ignoradas por git\n`));
   }
 
   // Paso 5
-  const projectData = await stepGithubProject(owner);
+  const projectData = await stepGithubProject(owner, projectToken);
 
   // Persistir GitHub Project ID en .workspace-version para que los skills lo lean
   if (projectData) {
@@ -808,7 +1154,7 @@ async function main() {
   }
 
   // Paso 6
-  stepSummary({ rootPath, projectData, projectType });
+  stepSummary({ rootPath, projectData, projectType, hasProjectToken: !!projectToken });
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -858,11 +1204,19 @@ async function router() {
   }
 }
 
-router().catch((err) => {
-  if (err.name === 'ExitPromptError') {
-    console.log(chalk.yellow('\n\nSaliendo... (operación cancelada por el usuario)\n'));
-    process.exit(0);
-  }
-  console.error(chalk.red('\n✗ Error inesperado:'), err.message);
-  process.exit(1);
-});
+router()
+  .then(() => {
+    // Completado exitosamente — limpiar tracker para que el SIGINT handler
+    // no borre nada si llega una señal post-éxito
+    createdResources.dirs.clear();
+  })
+  .catch(async (err) => {
+    if (err.name === 'ExitPromptError') {
+      console.log(chalk.yellow('\n\nSaliendo... (operación cancelada por el usuario)'));
+      await cleanupPartialState();
+      process.exit(0);
+    }
+    console.error(chalk.red('\n✗ Error inesperado:'), err.message);
+    await cleanupPartialState();
+    process.exit(1);
+  });
