@@ -13,6 +13,12 @@ Cuando el dev quiere planificar una feature nueva, crear un epic, o desglosar tr
 
 ## Flujo
 
+### 0. Resolver credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
 ### 1. Entender el scope
 
 Preguntar al dev:

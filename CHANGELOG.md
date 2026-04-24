@@ -8,6 +8,34 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.0.6] — 2026-04-23
+
+Versión centrada en **resolución automática de credenciales de GitHub para colaboradores**: cuando un dev clona un repo que ya incorpora el workspace, los skills (`/init`, `/plan`, etc.) detectan automáticamente con qué cuenta tiene acceso al repo y no piden token manualmente. Elimina el bug donde el token equivocado quedaba cacheado permanentemente.
+
+### Added
+- Nuevo script [templates/scripts/resolve-gh-creds.sh](templates/scripts/resolve-gh-creds.sh) que los skills invocan con `source`. El script resuelve `GH_TOKEN` y `GITHUB_USER` en este orden, validando contra el repo en cada paso:
+  1. `GH_TOKEN` del entorno (si ya es válido para el repo actual).
+  2. Credenciales embebidas en `remote.origin.url` (`https://user:token@...`).
+  3. `.claude-credentials` cacheado, con revalidación si cambió el remote o pasaron 7 días.
+  4. `git credential fill` — funciona con cualquier `credential.helper` (store, osxkeychain, wincred, libsecret) de forma cross-platform.
+  5. `gh auth token` de la sesión activa.
+- El script copia el token a `.claude-credentials` **solo después de validarlo** contra `GET /repos/:owner/:repo` — elimina el bug donde se cacheaba un token sin acceso. Guarda también `GH_TOKEN_REMOTE` y `GH_TOKEN_VERIFIED_AT` para invalidación inteligente.
+- Nueva función `resolveCredsFromRepo` en [lib/github.js](lib/github.js) equivalente en JS, usada por el CLI al reconfigurar un proyecto existente. Lee `~/.git-credentials`, `~/.config/git/credentials`, `.claude-credentials`, `.git/project-credentials`, y `gh auth` — valida cada candidato probando `gh api repos/:owner/:repo`.
+- El flujo de `/update` ahora trata `scripts/` como un tipo más junto a `skills/` y `rules/`: detecta nuevos, actualizados, personalizados y obsoletos. Proyectos existentes reciben `resolve-gh-creds.sh` al actualizar, sin intervención manual.
+- `saveProjectGithubCredentials` ahora escribe también `GH_TOKEN_REMOTE` y `GH_TOKEN_VERIFIED_AT` para que el script bash no revalide innecesariamente. El archivo se crea con permisos `0600`.
+
+### Changed
+- **Credenciales del CLI separadas de las del proyecto**: el archivo que guarda `GH_TOKEN` del CLI se renombró de `.env.local` a [.claude-credentials](./.claude-credentials). Evita mezclar variables del proyecto con credenciales del workspace. Ambos siguen en `.gitignore`.
+- Todos los skills (`init`, `plan`, `apply`, `audit`, `build`, `debug`, `deploy`, `review`, `rollback`, `secure`, `sync`, `pentest`, `triage`) ahora usan `source .claude/scripts/resolve-gh-creds.sh || exit 1` en lugar de un bloque bash inline. Un solo lugar para mantener, arreglar y mejorar.
+- El flujo single-repo "desde cero" fuerza pedir un token cuando el `owner` ingresado (p.ej. `Dev3ch`) es diferente al usuario autenticado — previene el error `cannot create a repository for <org>` antes de llegar a la llamada.
+
+### Fixed
+- Bug reproducible: cuando `~/.git-credentials` tenía múltiples cuentas para `github.com`, git devolvía la primera entrada para cualquier repo y `gh` usaba la sesión global activa. Resultado: `gh issue create` en un repo de `Dev3ch` fallaba con `GraphQL: RenildoChavezFlujolink cannot create a repository for Dev3ch`. Ahora el script valida cada candidato contra el repo específico antes de usarlo.
+- Regex de host en el parser de `~/.git-credentials` capturaba el path cuando la entrada tenía formato `https://user:tok@github.com/path` — corregido para capturar solo hasta el primer `/`.
+- Los skills ya no cachean silenciosamente un token inválido en `.claude-credentials`. Si la única fuente disponible es una cuenta sin acceso al repo, el script muestra instrucciones accionables en lugar de persistir basura.
+
+---
+
 ## [1.0.5] — 2026-04-23
 
 Versión centrada en **detección automática**, **respeto por `.gitignore`** y **manejo robusto de errores de GitHub Project**: el CLI deja de pedir al usuario datos que ya están en el código del repo, deja de mostrar directorios de dependencias/caches en el resumen final, y ya no sigue silenciosamente cuando algo crítico falla.

@@ -13,6 +13,17 @@ Al inicio de cada sesión de trabajo, antes de empezar cualquier tarea.
 
 ## Pasos
 
+### 0. Resolver credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+El script detecta automáticamente la cuenta con acceso al repo (revisa remote
+con creds embebidas, .claude-credentials, keychain del SO, y sesión de `gh`).
+Valida el token contra el repo antes de cachear. Si nada funciona, muestra
+instrucciones claras.
+
 ### 1. Verificar estado del repo / workspace
 
 ```bash

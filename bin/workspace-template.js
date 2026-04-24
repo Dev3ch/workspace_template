@@ -38,6 +38,7 @@ import {
   extractCredsFromUrl,
   setRepoRemoteWithCreds,
   isGitRepo,
+  resolveCredsFromRepo,
 } from '../lib/github.js';
 import {
   generateClaudeDir,
@@ -321,6 +322,27 @@ async function askAndValidateToken(ghAvailable) {
 async function stepGithubAuth() {
   console.log(chalk.bold.cyan('═══ Paso 2 — Autenticación GitHub ═══\n'));
 
+  // Si ya estamos dentro de un repo clonado, intentar resolver creds sin preguntar
+  const cwd = process.cwd();
+  if (isGitRepo(cwd)) {
+    const resolved = await resolveCredsFromRepo(cwd);
+    if (resolved.username && resolved.token) {
+      if (resolved.hasRepoAccess === false) {
+        console.log(chalk.red(`✗ Usuario "${resolved.username}" detectado (${resolved.source}) pero NO tiene acceso de escritura al repo.`));
+        console.log(chalk.yellow('  Es posible que no hayas sido invitado al repositorio.'));
+        console.log(chalk.gray('  Puedes continuar con otro token o salir.\n'));
+        // No retornar — caer al flujo interactivo para que ingrese otro token
+      } else {
+        const accessMsg = resolved.hasRepoAccess === true ? chalk.green(' ✓ acceso verificado') : chalk.gray(' (acceso no verificado)');
+        console.log(chalk.green(`✓ Credenciales detectadas desde el repo (${resolved.source})${accessMsg}`));
+        console.log(chalk.gray(`  Usuario: ${chalk.bold(resolved.username)}\n`));
+        return { ghUser: resolved.username, projectToken: resolved.token };
+      }
+    } else if (resolved.username) {
+      console.log(chalk.gray(`  → Usuario local detectado: ${chalk.bold(resolved.username)} (sin token — se pedirá si es necesario)\n`));
+    }
+  }
+
   const ghInstalled = await isGhInstalled();
 
   if (ghInstalled) {
@@ -329,8 +351,8 @@ async function stepGithubAuth() {
 
     if (authenticated) {
       console.log(chalk.green(`✓ gh CLI detectado — sesión activa: ${chalk.bold(user)}`));
-      console.log(chalk.gray('  Opción A: usar esta sesión global (no crea .env.local, usa config del sistema)'));
-      console.log(chalk.gray('  Opción B: token por proyecto (aísla credenciales en .env.local, no toca tu sesión global)\n'));
+      console.log(chalk.gray('  Opción A: usar esta sesión global (no crea .claude-credentials, usa config del sistema)'));
+      console.log(chalk.gray('  Opción B: token por proyecto (aísla credenciales en .claude-credentials, no toca tu sesión global)\n'));
 
       const useExisting = await confirm({
         message: `¿Usar la cuenta global "${user}" para este proyecto?`,
@@ -1201,10 +1223,10 @@ function stepSummary({ rootPath, projectData, projectType, hasProjectToken = fal
   console.log(chalk.gray(`       cursor "${rootPath}" # Cursor`));
   console.log('');
   console.log(chalk.white('  2. Abre Claude Code y ejecuta:'));
-  console.log(chalk.bold.green('       /session-start'));
+  console.log(chalk.bold.green('       /init'));
   console.log('');
   console.log(chalk.white('  3. Para planificar features:'));
-  console.log(chalk.bold.green('       /planning'));
+  console.log(chalk.bold.green('       /plan'));
   console.log('');
   if (projectData?.url) {
     console.log(chalk.white('  4. GitHub Project:'));
@@ -1213,10 +1235,10 @@ function stepSummary({ rootPath, projectData, projectType, hasProjectToken = fal
   }
   if (hasProjectToken) {
     console.log(chalk.bold('Token de GitHub por proyecto:'));
-    console.log(chalk.gray('  Guardado en .env.local (ignorado por git). Para usar gh CLI en este proyecto:'));
-    console.log(chalk.cyan('    set -a && source .env.local && set +a'));
+    console.log(chalk.gray('  Guardado en .claude-credentials (ignorado por git). Para usar gh CLI en este proyecto:'));
+    console.log(chalk.cyan('    set -a && source .claude-credentials && set +a'));
     console.log(chalk.gray('  O en un solo comando:'));
-    console.log(chalk.cyan('    env $(cat .env.local) gh <comando>\n'));
+    console.log(chalk.cyan('    env $(cat .claude-credentials) gh <comando>\n'));
   }
   console.log(chalk.bold.green('¡Workspace configurado correctamente! 🚀\n'));
 }
@@ -1274,12 +1296,20 @@ async function main() {
     await setGitUserLocal(p, { name: ghUser });
   }
 
-  // Guardar credenciales en .env.local en cada repo cuando hay token de proyecto
+  // Guardar credenciales en .claude-credentials en cada repo cuando hay token de proyecto
   if (projectToken) {
     for (const p of allRepoPaths) {
-      saveProjectGithubCredentials(p, { username: ghUser, token: projectToken });
+      let remote = null;
+      try {
+        const url = await getRemoteOrigin(p);
+        if (url) {
+          const parsed = parseGithubUrl(url);
+          if (parsed.owner && parsed.repo) remote = `${parsed.owner}/${parsed.repo}`;
+        }
+      } catch { /* sin remote — omitir */ }
+      saveProjectGithubCredentials(p, { username: ghUser, token: projectToken, remote });
     }
-    console.log(chalk.green(`✓ Credenciales guardadas en .env.local de ${allRepoPaths.length} ubicación(es) — ignoradas por git\n`));
+    console.log(chalk.green(`✓ Credenciales guardadas en .claude-credentials de ${allRepoPaths.length} ubicación(es) — ignoradas por git\n`));
   }
 
   // Paso 5

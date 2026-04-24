@@ -7,6 +7,14 @@ description: Code review del PR con perspectiva fresca. Usar antes de mergear.
 
 Revisa código con perspectiva fresca. Ideal para revisar PRs o validar implementaciones.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 - Antes de mergear un PR.

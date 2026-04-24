@@ -7,6 +7,14 @@ description: Commit + push + comenta progreso en el issue activo. Usar al cerrar
 
 Guarda el progreso de la sesión en GitHub y hace push del trabajo.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 Al final de cada sesión de trabajo, o cuando el dev pide guardar progreso.

@@ -7,6 +7,14 @@ description: Revisión de seguridad OWASP Top 10 de los cambios pendientes. Usar
 
 Revisión de seguridad profunda de los cambios pendientes: OWASP Top 10, auth, autorización, inyección y lógica sensible.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 - Antes de mergear un PR que toca: autenticación, pagos, uploads, integraciones externas, datos sensibles.

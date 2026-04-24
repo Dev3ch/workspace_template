@@ -7,6 +7,14 @@ description: Genera Dockerfile, GitHub Actions y .env.example. Usar después de 
 
 Prepara el proyecto para deployment: genera Dockerfile, GitHub Actions de CI/CD y `.env.example` según el stack y proveedor elegido.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 Cuando el proyecto está listo para salir a producción por primera vez, o cuando necesitas configurar el pipeline de CI/CD desde cero.
@@ -314,7 +322,7 @@ Si faltan entradas, agregarlas:
 
 ```
 .env
-.env.local
+.claude-credentials
 .env.*.local
 ```
 

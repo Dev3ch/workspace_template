@@ -7,6 +7,14 @@ description: Detecta drift entre código real y plan en GitHub. Reconcilia issue
 
 Detecta drift entre el código real y el plan en GitHub. Reconcilia issues resueltos indirectamente, duplicados o desactualizados.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 - Cuando dos devs trabajan en paralelo y puede haber solapamiento.

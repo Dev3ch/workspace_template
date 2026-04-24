@@ -7,6 +7,14 @@ description: Ejecuta el issue activo: implementa el código y corre los tests. U
 
 Ejecuta el issue activo: lee el plan, implementa el código, corre los tests y reporta resultado.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 Después de `/plan`, cuando tienes un issue asignado y listo para implementar. Es el comando que convierte el plan en código real.

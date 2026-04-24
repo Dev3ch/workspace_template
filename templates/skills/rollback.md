@@ -7,6 +7,14 @@ description: Revierte el último deploy de forma segura y crea issue de post-mor
 
 Revierte el último deploy de forma segura: identifica qué se deployó, deshace los cambios y vuelve a publicar el estado anterior.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 - Cuando un deploy a producción introduce un error crítico.

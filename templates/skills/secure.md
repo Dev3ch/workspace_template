@@ -7,6 +7,14 @@ description: Pre-deploy checklist obligatorio: env vars, secrets, CVEs, Dockerfi
 
 Pre-deploy checklist obligatorio: valida que el proyecto está listo para publicarse sin comprometer secrets, credenciales ni estabilidad.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## Cuándo invocar
 
 **Obligatorio antes de cada `/deploy`.** No es opcional.
@@ -70,7 +78,7 @@ Cualquier match → bloquear deploy.
 
 ```bash
 # Verificar que archivos sensibles están ignorados
-for f in .env .env.local .env.production credentials.json secrets.yaml; do
+for f in .env .claude-credentials .env.production credentials.json secrets.yaml; do
   if git check-ignore "$f" >/dev/null 2>&1 || [ ! -f "$f" ]; then
     echo "✓ $f"
   else
@@ -79,7 +87,7 @@ for f in .env .env.local .env.production credentials.json secrets.yaml; do
 done
 
 # Verificar si alguno fue commiteado por error
-git log --all --full-history -- .env .env.local 2>/dev/null | head -5
+git log --all --full-history -- .env .claude-credentials 2>/dev/null | head -5
 ```
 
 ### 4. Dependencias con vulnerabilidades conocidas

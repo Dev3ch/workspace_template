@@ -7,6 +7,14 @@ description: Cierra issues cubiertos y mueve estados en bulk.
 
 Analyze a PR or epic against its issues, update acceptance criteria coverage, close covered issues, and move board statuses in bulk.
 
+## Credenciales de GitHub
+
+```bash
+source .claude/scripts/resolve-gh-creds.sh || exit 1
+```
+
+Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
+
 ## When to invoke
 
 - After a large PR lands and you need to close the issues it covers.
