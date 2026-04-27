@@ -151,3 +151,7 @@ Soporte:
 3. Antes de cada deploy: `/secure` es obligatorio — no omitir.
 4. Si el plan en GitHub no refleja el código: correr `/sync` antes de continuar.
 5. Si aparece un aprendizaje que debe persistir: commitearlo al `CLAUDE.md` del repo correspondiente.
+6. **Nunca escribir código sin un issue previo.** Si el dev pide implementar algo y no hay issue visible, preguntar si quiere crear el issue primero con `/plan`.
+7. **`/plan` se activa también por texto.** Si el dev dice "quiero planificar", "hagamos un plan para X", "¿qué issues necesitamos?", "¿cómo lo dividimos?", etc. — tratar como invocación de `/plan` aunque no haya escrito el comando.
+8. **Todo trabajo parte desde `dev`.** Las ramas `feat/*` y `fix/*` se crean desde `dev`, nunca directamente en `dev` o `main`.
+9. **Cualquier comando `gh` debe usar las credenciales del proyecto, no la sesión global del sistema.** Antes de ejecutar cualquier `gh issue`, `gh pr`, `gh api`, `gh project`, etc. — incluso fuera de una skill, aunque sea en respuesta a una pregunta de chat — siempre hacer primero: `source .claude/scripts/resolve-gh-creds.sh || exit 1`. Nunca asumir que `gh auth status` local es la cuenta correcta para el repo.

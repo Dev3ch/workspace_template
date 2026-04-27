@@ -26,6 +26,7 @@ import {
   validateGithubToken,
   validateTokenWithCurl,
   saveProjectGithubCredentials,
+  ensureClaudeCredentialsIgnored,
   setGitUserLocal,
   cloneRepo,
   createGithubProject,
@@ -48,7 +49,7 @@ import {
   generateIssueTemplates,
   printGeneratedTree,
 } from '../lib/workspace-gen.js';
-import { askMcpIntegrations, mergeMcpConfig } from '../lib/mcp-tools.js';
+import { mergeMcpConfig } from '../lib/mcp-tools.js';
 import { runUpdate, getCurrentPackageVersion, saveGithubProject } from '../lib/updater.js';
 
 // ──────────────────────────────────────────────────────────────
@@ -514,7 +515,7 @@ async function stepProjectType() {
 // PASO 4a — Single repo
 // ──────────────────────────────────────────────────────────────
 
-async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken } = {}) {
+async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken, projectSummary } = {}) {
   console.log(chalk.bold.cyan('\n═══ Paso 4 — Configuración single-repo ═══\n'));
 
   const repoOrigin = await select({
@@ -524,16 +525,6 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
       { name: 'Ya tengo carpeta local (sin GitHub)',    value: 'local' },
       { name: 'Empiezo desde cero',                     value: 'scratch' },
     ],
-  });
-
-  const projectName = await input({
-    message: 'Nombre del proyecto:',
-    validate: (v) => v.trim().length > 0 || 'El nombre no puede estar vacío',
-  });
-
-  const projectDescription = await input({
-    message: 'Descripción breve del proyecto:',
-    default: `Plataforma ${projectName}`,
   });
 
   let repoPath;
@@ -680,7 +671,11 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
       validate: (v) => v.trim().length > 0 || 'Requerido',
     });
 
-    repoName = projectName.trim().toLowerCase().replace(/\s+/g, '-');
+    const newRepoName = await input({
+      message: 'Nombre del nuevo repositorio:',
+      validate: (v) => v.trim().length > 0 || 'El nombre no puede estar vacío',
+    });
+    repoName = newRepoName.trim().toLowerCase().replace(/\s+/g, '-');
     repoPath = path.join(path.resolve(destParent.trim()), repoName);
 
     // Elegir stack antes para saber si hay template
@@ -725,8 +720,8 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
 
       const spinnerGen = ora('Generando CLAUDE.md y estructura .claude/...').start();
       generateSingleRepoCLAUDE(repoPath, {
-        projectName: projectName.trim(),
-        projectDescription: projectDescription.trim(),
+        projectName: repoName,
+        projectDescription: projectSummary ?? repoName,
         stack: stackLabel(stacks),
         port: port.trim() || 'N/A',
         owner: owner.trim(),
@@ -734,6 +729,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
       });
       generateClaudeDir(repoPath, stacks, { selectedSkills, mcpConfig });
       generateIssueTemplates(repoPath);
+      ensureClaudeCredentialsIgnored(repoPath);
       spinnerGen.succeed('Estructura generada');
 
       try {
@@ -782,8 +778,8 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
   const spinner = ora('Generando CLAUDE.md y estructura .claude/...').start();
   try {
     generateSingleRepoCLAUDE(repoPath, {
-      projectName: projectName.trim(),
-      projectDescription: projectDescription.trim(),
+      projectName: repoName,
+      projectDescription: projectSummary ?? repoName,
       stack: stackLabel(stacks),
       port: port.trim() || 'N/A',
       owner: owner.trim(),
@@ -791,6 +787,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
     });
     generateClaudeDir(repoPath, stacks, { selectedSkills, mcpConfig });
     const templateFiles = generateIssueTemplates(repoPath);
+    ensureClaudeCredentialsIgnored(repoPath);
     spinner.succeed('Estructura generada');
 
     // Intentar commitear issue templates
@@ -813,7 +810,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken 
 // PASO 4b — Multi repo
 // ──────────────────────────────────────────────────────────────
 
-async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken } = {}) {
+async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken, projectSummary } = {}) {
   console.log(chalk.bold.cyan('\n═══ Paso 4 — Configuración multi-repo ═══\n'));
 
   const workspaceName = await input({
@@ -840,11 +837,6 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken }
     message: 'GitHub owner o organización principal:',
     default: ghUser ?? '',
     validate: (v) => v.trim().length > 0 || 'Requerido',
-  });
-
-  const projectDescription = await input({
-    message: 'Descripción del proyecto:',
-    default: `Plataforma ${workspaceName.trim()}`,
   });
 
   console.log(chalk.cyan('\n── Lista de repositorios del workspace ──\n'));
@@ -982,7 +974,7 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken }
   try {
     generateMultiRepoCLAUDE(workspacePath, {
       projectName: workspaceName.trim(),
-      projectDescription: projectDescription.trim(),
+      projectDescription: projectSummary ?? workspaceName.trim(),
       owner: owner.trim(),
       repos,
     });
@@ -1000,7 +992,7 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken }
     try {
       generateSingleRepoCLAUDE(repo.repoPath, {
         projectName: workspaceName.trim(),
-        projectDescription: repo.role,
+        projectDescription: projectSummary ?? workspaceName.trim(),
         stack: repo.stack,
         port: repo.port,
         owner: repo.owner,
@@ -1008,6 +1000,7 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken }
       });
       generateClaudeDir(repo.repoPath, repo.stacks, { selectedSkills });
       generateIssueTemplates(repo.repoPath);
+      ensureClaudeCredentialsIgnored(repo.repoPath);
 
       // Commitear
       try {
@@ -1034,30 +1027,11 @@ async function stepProjectContext() {
   console.log(chalk.bold.cyan('\n═══ Contexto del proyecto ═══\n'));
 
   const projectSummary = await input({
-    message: 'Describe tu proyecto en 1-2 frases (esto ayuda a generar skills contextuales):',
+    message: 'Describe tu proyecto en 1-2 frases:',
     validate: (v) => v.trim().length > 0 || 'La descripción no puede estar vacía',
   });
 
-  const domain = await select({
-    message: '¿Cuál es el dominio principal?',
-    choices: [
-      { name: 'E-commerce / marketplace',  value: 'ecommerce' },
-      { name: 'SaaS B2B',                  value: 'saas-b2b' },
-      { name: 'Fintech / cobranza',         value: 'fintech' },
-      { name: 'CRM / ventas',               value: 'crm' },
-      { name: 'Salud / healthcare',         value: 'healthcare' },
-      { name: 'Educación',                  value: 'educacion' },
-      { name: 'Logística',                  value: 'logistica' },
-      { name: 'Otro (texto libre)',          value: 'otro' },
-    ],
-  });
-
-  let domainLabel = domain;
-  if (domain === 'otro') {
-    domainLabel = await input({ message: 'Describe el dominio:' });
-  }
-
-  return { projectSummary: projectSummary.trim(), domain: domainLabel };
+  return { projectSummary: projectSummary.trim() };
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1087,18 +1061,8 @@ const ALL_SKILLS = [
   { value: 'setup',    name: '/setup    — Refresh: regenera CLAUDE.md y config de un repo individual',      checked: false },
 ];
 
-async function stepSkillsSelection() {
-  console.log(chalk.bold.cyan('\n═══ Selección de skills ═══\n'));
-  console.log(chalk.gray('Los skills son comandos /slash que Claude Code reconoce en este workspace.'));
-  console.log(chalk.gray('Solo los seleccionados se copiarán a .claude/skills/\n'));
-
-  const selected = await checkbox({
-    message: '¿Qué skills quieres incluir?',
-    choices: ALL_SKILLS,
-    validate: (v) => v.length > 0 || 'Selecciona al menos un skill',
-  });
-
-  return selected;
+function stepSkillsSelection() {
+  return ALL_SKILLS.map((s) => s.value);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1276,6 +1240,78 @@ async function createProjectWithRecovery(owner, title, projectToken) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// PASO 5.5 — Herramientas recomendadas (Context7 + UI UX Pro Max)
+// ──────────────────────────────────────────────────────────────
+
+async function stepRecommendedTools() {
+  const tools = [
+    {
+      key: 'context7',
+      name: 'Context7',
+      desc: 'docs actualizadas de cualquier librería directamente en tu prompt',
+      check: async () => {
+        try { await execa('npx', ['ctx7', '--version']); return true; } catch { return false; }
+      },
+      install: async () => {
+        const spinner = ora('Instalando Context7...').start();
+        try {
+          await execa('npx', ['ctx7', 'setup', '--claude'], { stdio: 'inherit' });
+          spinner.succeed('Context7 instalado');
+        } catch {
+          spinner.fail('No se pudo instalar Context7 automáticamente');
+          console.log(chalk.gray('  Instálalo manualmente: npx ctx7 setup --claude'));
+        }
+      },
+    },
+    {
+      key: 'uipro',
+      name: 'UI UX Pro Max',
+      desc: 'inteligencia de diseño: estilos, paletas, componentes y tipografía',
+      check: async () => {
+        try { await execa('uipro', ['--version']); return true; } catch { return false; }
+      },
+      install: async () => {
+        const spinner = ora('Instalando UI UX Pro Max...').start();
+        try {
+          await execa('npm', ['install', '-g', 'uipro-cli'], { stdio: 'inherit' });
+          await execa('uipro', ['init', '--ai', 'claude'], { stdio: 'inherit' });
+          spinner.succeed('UI UX Pro Max instalado');
+        } catch {
+          spinner.fail('No se pudo instalar UI UX Pro Max automáticamente');
+          console.log(chalk.gray('  Instálalo manualmente:'));
+          console.log(chalk.gray('    npm install -g uipro-cli'));
+          console.log(chalk.gray('    uipro init --ai claude'));
+        }
+      },
+    },
+  ];
+
+  console.log(chalk.bold.cyan('\n═══ Herramientas recomendadas ═══\n'));
+  console.log(chalk.gray('Estas herramientas potencian a Claude Code en cualquier proyecto:\n'));
+
+  for (const tool of tools) {
+    console.log(`  ${chalk.bold(tool.name)} — ${tool.desc}`);
+  }
+
+  console.log('');
+  const install = await confirm({
+    message: '¿Las instalo ahora?',
+    default: true,
+  });
+
+  if (!install) {
+    console.log(chalk.gray('\n  Puedes instalarlas después con el skill /tools en tu workspace.\n'));
+    return;
+  }
+
+  console.log('');
+  for (const tool of tools) {
+    await tool.install();
+  }
+  console.log('');
+}
+
+// ──────────────────────────────────────────────────────────────
 // PASO 6 — Resumen final
 // ──────────────────────────────────────────────────────────────
 
@@ -1344,25 +1380,24 @@ async function main() {
   const projectType = await stepProjectType();
 
   // Paso 4c — contexto del proyecto
-  const { projectSummary, domain } = await stepProjectContext();
+  const { projectSummary } = await stepProjectContext();
 
   // Paso 4d — skills
-  const selectedSkills = await stepSkillsSelection();
+  const selectedSkills = stepSkillsSelection();
 
-  // Paso 4e — integraciones MCP
-  const mcpConfig = await askMcpIntegrations();
+  const mcpConfig = null;
 
   let rootPath;
   let owner;
   let allRepoPaths = [];
 
   if (projectType === 'single') {
-    const result = await stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken });
+    const result = await stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken, projectSummary });
     rootPath = result.repoPath;
     owner = result.owner;
     allRepoPaths = [result.repoPath];
   } else {
-    const result = await stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken });
+    const result = await stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken, projectSummary });
     rootPath = result.workspacePath;
     owner = result.owner;
     allRepoPaths = [result.workspacePath, ...result.repos.map((r) => r.repoPath)];
@@ -1396,6 +1431,9 @@ async function main() {
   if (projectData) {
     saveGithubProject(rootPath, { ...projectData, owner });
   }
+
+  // Paso 5.5 — herramientas recomendadas
+  await stepRecommendedTools();
 
   // Paso 6
   stepSummary({ rootPath, projectData, projectType, hasProjectToken: !!projectToken });

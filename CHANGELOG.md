@@ -8,6 +8,40 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.0.8] — 2026-04-27
+
+Versión centrada en **simplificación del flujo** y **corrección del flujo de credenciales de GitHub**: se eliminan preguntas innecesarias del setup, y `.claude-credentials` ahora tiene prioridad máxima sobre cualquier cuenta del sistema — Claude nunca usa la sesión local de `gh` sin antes validar acceso real al repo.
+
+### Removed
+- **Paso de integraciones MCP** (`¿Tu proyecto usa alguna de estas integraciones?`) eliminado del flujo. Notion, Linear, Slack, Sentry y Postgres se configuran dentro de cada proyecto cuando el equipo lo necesita — no tiene sentido pedirlo en el setup inicial sin contexto. Context7 y UI UX Pro Max se manejan ahora con el nuevo paso de herramientas recomendadas.
+- **Selección de dominio** (`¿Cuál es el dominio principal?`) eliminada de `stepProjectContext`. La descripción en 1-2 frases del proyecto ya captura ese contexto — preguntar el dominio por separado era redundante y no cambiaba ninguna configuración ni skill.
+- **Selección de skills** (`¿Qué skills quieres incluir?`) eliminada como paso interactivo. Ahora se instalan todos los skills automáticamente. El usuario puede explorar y desactivar los que no necesite en el camino, en lugar de tomar esa decisión sin contexto al inicio.
+- **`fnm` (Fast Node Manager)** eliminado de la verificación de entorno (Paso 1). Era redundante con `nvm`, que cubre exactamente la misma función.
+
+### Added
+- **Paso de herramientas recomendadas** al final del setup (antes del resumen): el CLI detecta Context7 y UI UX Pro Max, explica para qué sirven y pregunta si instalarlos en ese momento. Si el usuario dice que no, le indica que puede hacerlo después con `/tools`.
+- **Nuevo skill `/tools`** — lista las herramientas recomendadas, verifica cuáles están instaladas y guía la instalación de las que falten. Úsalo si no las instalaste durante el setup o si quieres verificarlas después.
+- **Verificación de UI UX Pro Max en `/design`** — al invocar `/design`, el skill verifica si `uipro` está instalado. Si no, avisa y ofrece el comando para instalarlo antes de continuar.
+
+### Changed
+- `stepSkillsSelection` ya no es interactiva — retorna todos los skills disponibles directamente.
+- `stepProjectContext` ya no retorna `domain`, solo `projectSummary`.
+- `TOOLS_TO_CHECK` en `lib/env-bootstrap.js` ya no incluye `fnm`.
+- **Orden de prioridad de credenciales explícito** en `resolve-gh-creds.sh`: (1) `GH_TOKEN` del env, (2) remote URL embebida, (3) `.claude-credentials` — prioridad máxima sobre el sistema, (4) `git credential fill` sin hint de cuenta local, (5) `gh auth token` — último recurso absoluto, solo si tiene acceso real al repo.
+- `ensureClaudeCredentialsIgnored()` agrega un comentario explicativo al `.gitignore` en lugar de solo la línea del archivo.
+- Regla operativa en `CLAUDE.md.hbs`: Claude siempre hace `source .claude/scripts/resolve-gh-creds.sh` antes de cualquier comando `gh`, incluso fuera de una skill.
+
+### Fixed
+- **`.claude-credentials` ignorado por git en todos los repos** — `ensureClaudeCredentialsIgnored()` se invoca siempre al final del setup de cada repo, independientemente de si hay `projectToken` o no. Antes solo se agregaba a `.gitignore` al guardar credenciales, dejando repos sin token desprotegidos.
+- **`gh auth token` (sesión local) ya no se usa sin validar acceso al repo** — ahora verifica con `gh api repos/:o/:r --jq .permissions.push` antes de aceptar la cuenta en `resolveCredsFromRepo` y en `resolve-gh-creds.sh`.
+- **`~/.git-credentials` con una sola cuenta se usaba sin validar** — si el store del sistema tenía exactamente una entrada, se tomaba como buena sin verificar acceso al repo. Corregido.
+- **Sesión activa de `gh` se filtraba como candidato en `git credential fill`** — el script usaba `gh api user --jq .login` como hint, sesgando hacia la cuenta instalada en la máquina. Eliminado.
+
+### Added
+- Nueva función exportada `ensureClaudeCredentialsIgnored(repoPath)` en [lib/github.js](lib/github.js) — garantiza que `.claude-credentials` esté en `.gitignore`, separada de `saveProjectGithubCredentials` para llamarse independientemente durante el setup.
+
+---
+
 ## [1.0.7] — 2026-04-24
 
 Versión centrada en **normalización del modelo de branches**: al incorporar un repo al workspace (clone, local o desde cero, en single-repo o multi-repo), el CLI garantiza que el repo tenga `main` (con opción de rename desde `master`) y `dev` como base de trabajo obligatoria. `staging` queda opcional para proyectos con QA previo. Los skills (`/init`, `/apply`, `/build`) refuerzan la regla: cada sesión nueva arranca en `dev`, tanto en single-repo como en todos los repos de un multi-repo.
@@ -269,7 +303,10 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.8...HEAD
+[1.0.8]: https://github.com/Dev3ch/workspace_template/compare/v1.0.7...v1.0.8
+[1.0.7]: https://github.com/Dev3ch/workspace_template/compare/v1.0.6...v1.0.7
+[1.0.6]: https://github.com/Dev3ch/workspace_template/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/Dev3ch/workspace_template/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/Dev3ch/workspace_template/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/Dev3ch/workspace_template/compare/v1.0.2...v1.0.3

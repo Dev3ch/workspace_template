@@ -123,7 +123,9 @@ if [ -n "$_rgc_embedded" ]; then
   fi
 fi
 
-# 3. .claude-credentials cacheado (revalidar si cambió el remote o pasaron 7 días)
+# 3. .claude-credentials — PRIORIDAD MÁXIMA sobre cualquier cuenta del sistema.
+#    Si el archivo existe y el token tiene acceso al repo, usarlo siempre.
+#    Solo se descarta si el token está vacío o ya no tiene acceso (expiró/revocado).
 GITHUB_USER=""
 GH_TOKEN=""
 _rgc_cached_remote=""
@@ -135,20 +137,22 @@ if [ -n "$GH_TOKEN" ]; then
   _rgc_age=$(( _rgc_now - ${_rgc_cached_ts:-0} ))
   _rgc_current_remote="$_rgc_remote_owner/$_rgc_remote_repo"
   if [ "$_rgc_cached_remote" = "$_rgc_current_remote" ] && [ "$_rgc_age" -lt 604800 ]; then
-    # Cache reciente, mismo repo — usar sin revalidar
+    # Cache reciente y mismo repo — usar sin revalidar
     export GH_TOKEN GITHUB_USER
     return 0 2>/dev/null || exit 0
   fi
-  # Revalidar
+  # Remote distinto o cache viejo — revalidar acceso al repo actual
   if _rgc_validate_token_for_repo "$GH_TOKEN" "$_rgc_remote_owner" "$_rgc_remote_repo"; then
     _rgc_save_creds "$GITHUB_USER" "$GH_TOKEN" "$_rgc_remote_owner" "$_rgc_remote_repo"
     export GH_TOKEN GITHUB_USER
     return 0 2>/dev/null || exit 0
   fi
-  # Cache inválido — limpiar y continuar
+  # Token expirado o revocado — limpiar y continuar a fuentes del sistema
   GITHUB_USER=""
   GH_TOKEN=""
 fi
+
+# 4. git credential fill (keychain/store del sistema) — solo si no hay .claude-credentials válido
 
 # 4. git credential fill (universal: store, osxkeychain, wincred, libsecret)
 _rgc_try_credential_fill() {
@@ -165,15 +169,12 @@ _rgc_try_credential_fill() {
   _rgc_try_token "$pass" "$user"
 }
 
-# Probar candidatos en orden: remoteOwner, user.name local, user activo de gh
+# Probar candidatos para git credential fill: owner del remote y user.name local del repo.
+# No incluir la sesión activa de gh (esa es el último recurso, paso 5).
 _rgc_candidates=""
 _rgc_candidates="$_rgc_candidates $_rgc_remote_owner"
 _rgc_local_user=$(git config --local user.name 2>/dev/null)
 [ -n "$_rgc_local_user" ] && _rgc_candidates="$_rgc_candidates $_rgc_local_user"
-if command -v gh >/dev/null 2>&1; then
-  _rgc_gh_user=$(gh api user --jq .login 2>/dev/null)
-  [ -n "$_rgc_gh_user" ] && _rgc_candidates="$_rgc_candidates $_rgc_gh_user"
-fi
 
 # Dedup manteniendo orden
 _rgc_seen=""
@@ -194,7 +195,8 @@ if _rgc_try_credential_fill ""; then
   return 0 2>/dev/null || exit 0
 fi
 
-# 5. gh auth token (sesión activa)
+# 5. gh auth token — ÚLTIMO RECURSO. Solo si no hay .claude-credentials ni credential store.
+#    Validar que tenga acceso real al repo antes de usarlo para no pisar cuentas incorrectas.
 if command -v gh >/dev/null 2>&1; then
   _rgc_gh_token=$(gh auth token 2>/dev/null)
   if [ -n "$_rgc_gh_token" ] && _rgc_try_token "$_rgc_gh_token" ""; then

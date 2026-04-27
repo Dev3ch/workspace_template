@@ -7,6 +7,24 @@ description: UI/UX: estilos, componentes, paletas, accesibilidad y layout.
 
 UI/UX design intelligence for web interfaces. Includes style recommendations, color palettes, accessibility checks, component design, and responsive layout guidance.
 
+## Verificación previa — UI UX Pro Max
+
+Antes de continuar, verifica si UI UX Pro Max está instalado:
+
+```bash
+uipro --version 2>/dev/null && echo "✓ disponible" || echo "✗ no instalado"
+```
+
+Si no está instalado, avisa al usuario y ofrece instalarlo:
+
+```bash
+npm install -g uipro-cli && uipro init --ai claude
+```
+
+Si no puede instalarse ahora, continúa con las capacidades base de este skill. Para instalarlo después: `/tools`.
+
+---
+
 ## When to invoke
 
 - Designing a new page, screen, or component from scratch.
