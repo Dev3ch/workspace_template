@@ -280,6 +280,14 @@ async function normalizeRepoBranches(repoPath, { owner, repo, token, label }) {
     if (report.stagingCreated)       console.log(chalk.green(`${prefix}✓ rama staging creada desde ${report.defaultBranch}`));
     if (report.stagingAlreadyExisted) console.log(chalk.gray(`${prefix}→ rama staging ya existía`));
 
+    // Posicionar en dev para que todos los commits del setup queden en dev, nunca en main
+    try {
+      await execa('git', ['checkout', 'dev'], { cwd: repoPath });
+      console.log(chalk.green(`${prefix}✓ Posicionado en dev — los commits del setup irán a dev`));
+    } catch {
+      console.log(chalk.yellow(`${prefix}⚠  No se pudo hacer checkout a dev — verifica manualmente`));
+    }
+
     return report;
   } catch (err) {
     spinner.fail(`${label ? `[${label}] ` : ''}No se pudo normalizar branches: ${err.message}`);
@@ -733,13 +741,20 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken,
       spinnerGen.succeed('Estructura generada');
 
       try {
+        // Primer push en main (necesario para poder crear dev desde ahí)
         await execa('git', ['add', '.'], { cwd: repoPath });
-        await execa('git', ['commit', '-m', 'chore(setup): initial workspace config'], { cwd: repoPath });
+        await execa('git', ['commit', '-m', 'chore(setup): initial commit'], { cwd: repoPath });
         await execa('git', ['push', '-u', 'origin', 'HEAD'], { cwd: repoPath });
-        console.log(chalk.green('✓ Primer commit pusheado'));
+        console.log(chalk.green('✓ Primer commit pusheado en main'));
 
-        // Normalizar modelo de branches (crea dev desde main)
+        // Crear dev (y hacer checkout a dev)
         await normalizeRepoBranches(repoPath, { owner: owner.trim(), repo: repoName, token: projectToken });
+
+        // Commit de la config de Claude Code en dev
+        await execa('git', ['add', '.github/', '.claude/', 'CLAUDE.md'], { cwd: repoPath });
+        await execa('git', ['commit', '-m', 'chore(setup): add Claude Code workspace config and GitHub templates'], { cwd: repoPath });
+        await execa('git', ['push', '-u', 'origin', 'dev'], { cwd: repoPath });
+        console.log(chalk.green('✓ Config de Claude Code commiteada en dev'));
       } catch {
         console.log(chalk.yellow('⚠  No se pudo hacer el primer push. Hazlo manualmente.'));
       }
@@ -1250,16 +1265,17 @@ async function stepRecommendedTools() {
       name: 'Context7',
       desc: 'docs actualizadas de cualquier librería directamente en tu prompt',
       check: async () => {
-        try { await execa('npx', ['ctx7', '--version']); return true; } catch { return false; }
+        const which = process.platform === 'win32' ? 'where' : 'which';
+        try { await execa(which, ['context7-mcp']); return true; } catch { return false; }
       },
       install: async () => {
         const spinner = ora('Instalando Context7...').start();
         try {
-          await execa('npx', ['ctx7', 'setup', '--claude'], { stdio: 'inherit' });
+          await execa('npm', ['install', '-g', '@upstash/context7-mcp']);
           spinner.succeed('Context7 instalado');
         } catch {
           spinner.fail('No se pudo instalar Context7 automáticamente');
-          console.log(chalk.gray('  Instálalo manualmente: npx ctx7 setup --claude'));
+          console.log(chalk.gray('  Instálalo manualmente: npm install -g @upstash/context7-mcp'));
         }
       },
     },
@@ -1268,7 +1284,8 @@ async function stepRecommendedTools() {
       name: 'UI UX Pro Max',
       desc: 'inteligencia de diseño: estilos, paletas, componentes y tipografía',
       check: async () => {
-        try { await execa('uipro', ['--version']); return true; } catch { return false; }
+        const which = process.platform === 'win32' ? 'where' : 'which';
+        try { await execa(which, ['uipro']); return true; } catch { return false; }
       },
       install: async () => {
         const spinner = ora('Instalando UI UX Pro Max...').start();

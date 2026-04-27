@@ -98,41 +98,71 @@ gh pr list --author @me --state open --json number,title,url,isDraft
 gh issue view <N> --json title,body,comments,assignees,labels,url
 ```
 
-### 5. Identificar la tarea
+### 5. Presentar estado y preguntar al dev qué hacer
 
-Basándose en la información recabada:
-- Si hay una tarea en progreso (label/board): continuar esa.
-- Si no hay nada asignado: mostrar el backlog y preguntar al dev qué tomar.
-- Si se pasó un issue específico: mostrar su detalle y plan de acción.
+Mostrar un resumen claro:
 
-### 6. Orientación
+```
+=== Estado actual ===
+Rama: dev (al día con origin)
 
-Mostrar al dev:
-- **Rama actual** y si está al día con `dev`.
-- **Próximo paso concreto** (qué archivo tocar, qué función escribir).
-- **Contexto del issue** si hay uno activo.
+Issues en progreso:
+  #42 — Agregar flujo de pago (feat/issue-42-payment-flow)
+  #38 — Refactor de auth
+
+Issues asignados sin empezar:
+  #45 — Integrar notificaciones push
+  #47 — Migración de base de datos
+
+PRs abiertos:
+  #12 — feat: payment flow (draft)
+```
+
+Luego preguntar explícitamente:
+
+```
+¿Qué quieres hacer?
+  1. Continuar con un issue en progreso
+  2. Empezar un issue asignado
+  3. Planificar algo nuevo → /plan
+  4. Otra cosa
+```
+
+Esperar respuesta del dev antes de continuar. No asumir.
+
+### 6. Orientación según la elección
+
+- **Opción 1 o 2:** mostrar el detalle del issue elegido, verificar que la rama existe y está al día, e indicar el próximo paso concreto (qué archivo tocar, qué función escribir).
+- **Opción 3:** invocar `/plan` directamente.
+- **Opción 4:** escuchar al dev.
 
 ## Output esperado
 
 ```
 === Sesión iniciada ===
-Rama: feat/issue-42-payment-flow (2 commits adelante de dev)
+Rama: dev (al día con origin)
 
-Issue activo: #42 — Agregar flujo de pago con Stripe
-Estado: In Progress
-Último progreso: [último comment del issue]
+Issues en progreso:
+  #42 — Agregar flujo de pago con Stripe (feat/issue-42-payment-flow)
 
-Próximo paso: Implementar webhook handler en apps/payments/views.py
+Issues asignados sin empezar:
+  #45 — Integrar notificaciones push
+
+¿Qué quieres hacer?
+  1. Continuar con #42 — flujo de pago
+  2. Empezar #45 — notificaciones push
+  3. Planificar algo nuevo → /plan
+  4. Otra cosa
 ```
 
 ## Siguiente paso
 
-Según el estado detectado:
+Según la elección del dev:
 
-- **Hay issue en progreso con rama creada** → `/apply` (continuar implementación)
-- **Hay issue asignado pero sin rama** → `/plan` (detallar tareas) o `/apply` (empezar directo)
-- **Backlog vacío o necesitas decidir qué hacer** → `/plan` (crear nuevo issue)
-- **Otros devs hicieron cambios recientes** → `/sync` primero, luego `/plan` o `/apply`
+- **Continuar issue en progreso** → `/apply` en la rama existente
+- **Empezar issue asignado** → `/apply` (crea la rama desde `dev`)
+- **Planificar algo nuevo** → `/plan`
+- **Otros devs hicieron cambios recientes** → `/sync` primero, luego volver aquí
 - **Hay un PR abierto esperando review** → `/review`
 - **No existe rama `dev` en el repo** → `/branches` para normalizar antes de continuar
 

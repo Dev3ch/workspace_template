@@ -8,6 +8,28 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.0.9] — 2026-04-27
+
+Versión centrada en **flujo conversacional y autonomía de Claude**: el dev ya no necesita escribir cada slash command — Claude interpreta la intención, propone el plan, pide confirmación y ejecuta el flujo completo. Además se corrige que los commits del setup iban a `main` en lugar de `dev`.
+
+### Fixed
+
+- **Commits del setup ahora van en `dev`, no en `main`** — `normalizeRepoBranches` hace `git checkout dev` al terminar, garantizando que los commits de config de Claude Code queden en `dev`. En el flujo desde cero: primer commit inicial en `main` (necesario para crear `dev` desde ahí), luego checkout a `dev` y segundo commit con la config de Claude.
+- **Context7 se instalaba con `npx` cada vez** — cambiado a `npm install -g @upstash/context7-mcp`. Ya no descarga el paquete en cada invocación. La detección de si ya está instalado usa `which context7-mcp` en lugar de `--version` (que el paquete no implementa).
+- **`uipro` también detectado por `which`** — consistente con el fix de Context7.
+
+### Changed
+
+- **`/plan` es conversacional** — nuevo paso 4: muestra el plan completo al dev antes de crear ningún issue y pide confirmación. Si el dev dice no, ajusta antes de continuar. Nuevo paso 9: después de crear los issues pregunta si arrancar con el primero ahora — si confirma, crea la rama `feat/issue-N-...` desde `dev`, la pushea, y asigna el issue con label `in-progress`.
+- **`/init` pregunta explícitamente qué hacer** — presenta el estado completo (issues en progreso, asignados, PRs) y ofrece opciones numeradas: continuar un issue en progreso, empezar uno asignado, planificar algo nuevo, u otra cosa. No asume ni avanza sin respuesta del dev.
+- **Flujo conversacional documentado en `CLAUDE.md.hbs`** — nueva regla 10: Claude ejecuta el flujo completo (`/plan` → issues → rama → `/apply` → `/build`) de forma autónoma en respuesta a lenguaje natural. El dev guía con texto; Claude avanza sin esperar que escriba cada slash command.
+
+### Added
+
+- **`ensureClaudeCredentialsIgnored(repoPath)`** exportada como función pública en [lib/github.js](lib/github.js) — se llama en los 3 flujos de setup (single GitHub, single local, multi-repo) garantizando que `.claude-credentials` esté en `.gitignore` con o sin `projectToken`.
+
+---
+
 ## [1.0.8] — 2026-04-27
 
 Versión centrada en **simplificación del flujo** y **corrección del flujo de credenciales de GitHub**: se eliminan preguntas innecesarias del setup, y `.claude-credentials` ahora tiene prioridad máxima sobre cualquier cuenta del sistema — Claude nunca usa la sesión local de `gh` sin antes validar acceso real al repo.
@@ -32,6 +54,7 @@ Versión centrada en **simplificación del flujo** y **corrección del flujo de 
 - Regla operativa en `CLAUDE.md.hbs`: Claude siempre hace `source .claude/scripts/resolve-gh-creds.sh` antes de cualquier comando `gh`, incluso fuera de una skill.
 
 ### Fixed
+- **Commits del setup ahora van en `dev`, no en `main`** — `normalizeRepoBranches` hace `git checkout dev` después de crear la rama, garantizando que todos los commits posteriores del setup (config de Claude, templates de GitHub) queden en `dev`. En el flujo desde cero, el primer commit inicial va en `main` (necesario para poder crear `dev` desde ahí) y el commit de la config de Claude Code se hace en un segundo commit ya en `dev`.
 - **`.claude-credentials` ignorado por git en todos los repos** — `ensureClaudeCredentialsIgnored()` se invoca siempre al final del setup de cada repo, independientemente de si hay `projectToken` o no. Antes solo se agregaba a `.gitignore` al guardar credenciales, dejando repos sin token desprotegidos.
 - **`gh auth token` (sesión local) ya no se usa sin validar acceso al repo** — ahora verifica con `gh api repos/:o/:r --jq .permissions.push` antes de aceptar la cuenta en `resolveCredsFromRepo` y en `resolve-gh-creds.sh`.
 - **`~/.git-credentials` con una sola cuenta se usaba sin validar** — si el store del sistema tenía exactamente una entrada, se tomaba como buena sin verificar acceso al repo. Corregido.
@@ -303,7 +326,8 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.8...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.9...HEAD
+[1.0.9]: https://github.com/Dev3ch/workspace_template/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/Dev3ch/workspace_template/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/Dev3ch/workspace_template/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/Dev3ch/workspace_template/compare/v1.0.5...v1.0.6
