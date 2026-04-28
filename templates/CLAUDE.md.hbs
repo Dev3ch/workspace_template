@@ -165,3 +165,11 @@ Soporte:
 13. **Un work-item = una rama = un PR final.** Cada task cerrada se commitea en la misma rama con mensaje `<tipo>(scope): descripción (#task-N) — <tipo-padre> #parent-N`. El PR hacia `dev` se abre **solo cuando todas las tasks están cerradas** y el dev confirma.
 14. **Si aparece trabajo nuevo durante la implementación**: si forma parte de cerrar BIEN el work-item activo → nueva task hija del mismo padre. Si es un problema de algo ya mergeado en producción → nuevo work-item de tipo `fix` (separado).
 15. **Confirmación obligatoria antes de acciones visibles.** Claude pregunta antes de: crear issues, crear la rama, hacer commit, hacer push, abrir el PR. Lo único sin preguntar son acciones reversibles locales (editar archivos, correr tests, leer código).
+16. **Drift detection — la rama del work-item se mantiene al día con `dev`.** Mientras varios devs trabajan en paralelo, otros pueden mergear cosas a `dev` y dejar tu rama atrás. Claude chequea drift en estos puntos:
+    - **`/init`** — al arrancar la sesión, lista work-items locales atrasados y ofrece sincronizar.
+    - **`/apply`** — antes de tocar código, si la rama está atrás de `dev`, ofrece rebase/merge antes de codear.
+    - **`/build`** — chequeo silencioso antes del push (heads-up si dev avanzó); chequeo **bloqueante** antes de abrir el PR (si la rama está atrás, no abre el PR sin sincronizar primero).
+    - **Cada ~10 minutos de actividad** — chequeo silencioso, solo habla si hay drift nuevo.
+    - **Por intención textual** — "¿estamos al día?", "actualízame la rama", "¿hubo cambios?" → chequeo inmediato.
+
+    Default: **rebase** (`git rebase origin/dev` + `git push --force-with-lease`). **Merge** si la rama es compartida con otro dev. Claude **nunca rebasa ni mergea solo** — siempre con confirmación. Si hay conflictos, pausa y pide al dev que los resuelva.

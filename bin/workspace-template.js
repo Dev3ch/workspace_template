@@ -153,6 +153,7 @@ async function askStacks(repoName) {
 
 /** Genera el label de stack para la tabla de repos */
 function stackLabel(stacks) {
+  if (!stacks || stacks.length === 0) return 'Sin stack específico';
   return stacks.map((s) => STACK_LABELS[s] ?? s).join(' + ');
 }
 
@@ -171,6 +172,17 @@ async function resolveStacks(repoPath, repoName) {
 
   if (detected.length === 0) {
     console.log(chalk.gray(`  → No se detectaron stacks automáticamente en "${repoName}"`));
+    console.log(chalk.gray(`    (puede ser una plantilla, un repo de configuración, un agente, etc.)`));
+
+    const wantsToSpecify = await confirm({
+      message: `¿"${repoName}" usa un stack tradicional (Next.js / Django / Go / etc.)?`,
+      default: false,
+    });
+
+    if (!wantsToSpecify) {
+      console.log(chalk.gray(`  → Continuando sin stack específico para "${repoName}"`));
+      return [];
+    }
     return askStacks(repoName);
   }
 

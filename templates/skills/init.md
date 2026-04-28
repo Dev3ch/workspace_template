@@ -76,6 +76,41 @@ git log --oneline -10
 # git -C <repo-path> status
 ```
 
+### 1.5 Detectar drift en ramas de work-items locales
+
+Después de actualizar `dev`, comparar cada rama local de work-item contra `origin/dev` para detectar cuáles quedaron atrás (porque otro dev mergeó algo a `dev` mientras esa rama vivía).
+
+```bash
+# Listar ramas locales de work-items y medir cuántos commits están atrás de origin/dev
+for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/ \
+  | grep -E '^(feature|refactor|fix|chore|hotfix)/'); do
+  behind=$(git rev-list --count "$branch..origin/dev" 2>/dev/null || echo "?")
+  ahead=$(git rev-list --count "origin/dev..$branch" 2>/dev/null || echo "?")
+  if [ "$behind" -gt 0 ] 2>/dev/null; then
+    echo "  $branch  ($behind commits atrás, $ahead commits propios)"
+  fi
+done
+```
+
+Si hay ramas con drift, mostrarlas al dev y ofrecer sincronizar:
+
+```
+⚠  Drift detectado en tus work-items:
+
+  feature/12-sistema-pagos      (5 commits atrás de dev)
+  refactor/15-migracion-auth    (2 commits atrás de dev)
+
+¿Quieres sincronizar alguna ahora? [s/N]
+```
+
+Si el dev confirma:
+- **Default: rebase** (`git rebase origin/dev` en cada rama elegida).
+- Si la rama tiene commits ya pusheados que comparte con otro dev → preferir `git merge origin/dev`.
+- Tras un rebase exitoso: `git push --force-with-lease origin <rama>` (nunca `--force` puro).
+- Si hay conflictos → pausar y pedirle al dev que los resuelva.
+
+Marcar la sesión con `_DRIFT_LAST_CHECK_AT=$(date +%s)` para que las skills posteriores no rechecheen innecesariamente en los próximos 10 minutos.
+
 ### 2. Revisar work-items y tasks activas
 
 Los work-items son los issues padre con label `feature`, `refactor`, `fix` o `chore`. Las tasks son sus sub-issues.

@@ -1,318 +1,216 @@
 # workspace-template
 
-Configura un workspace de Claude Code para cualquier proyecto — single-repo o multi-repo — con integración completa de GitHub, selección de skills, reglas de trabajo y MCP tools.
-
-## Inicio rápido
-
-**Si no tienes Node.js instalado todavía:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Dev3ch/workspace_template/main/setup.sh | bash
-```
-
-El script verifica tu entorno, instala las dependencias necesarias y lanza el CLI automáticamente.
-
-**Si ya tienes Node.js:**
+Convierte cualquier proyecto en un workspace de **Claude Code** con flujo de trabajo profesional listo para usar.
 
 ```bash
 npx workspace-template
 ```
 
-Sin clonar nada, sin pasos previos.
+Sin clonar, sin configurar nada antes.
 
 ---
 
-**Instalación manual (opcional):**
+## Qué te da
 
+- **Flujo work-item / tasks**: planifica, implementa y lanzas PRs siguiendo un patrón estándar (estilo Linear / Vercel).
+- **Skills de Claude Code**: comandos como `/init`, `/plan`, `/apply`, `/build`, `/review` que automatizan el ciclo completo.
+- **Modelo de branches**: `main` + `dev` (obligatoria) + `staging` (opcional), creadas y normalizadas por el CLI.
+- **Integración con GitHub**: issues, sub-issues nativos, PRs, GitHub Projects — todo conectado.
+- **Conventional Commits** + drift detection automático contra `dev`.
+- **Single-repo o multi-repo** indistintamente.
+
+## Inicio rápido
+
+**Sin Node.js instalado:**
 ```bash
-git clone https://github.com/Dev3ch/workspace_template
-cd workspace_template
-npm install
-node bin/workspace-template.js
+curl -fsSL https://raw.githubusercontent.com/Dev3ch/workspace_template/main/setup.sh | bash
 ```
 
-## Flujo del CLI
-
-El CLI te guía paso a paso. Todo en español.
-
-```
-1. Entorno
-   Detecta OS + herramientas: nvm, node, python, uv, git, gh, docker
-   Muestra qué falta y el comando exacto para instalarlo según tu OS
-   Nunca instala nada automáticamente
-
-2. GitHub auth
-   Verifica gh auth status
-   Si no estás autenticado: explica scopes, token y formato HTTPS autenticado
-
-3. Tipo de proyecto
-   single-repo  →  un solo repositorio
-   multi-repo   →  varios repos agrupados en una carpeta workspace
-
-4. Repos
-   Single-repo  → tres caminos:
-                  · Ya tengo repo en GitHub  → clona (o reutiliza si ya existe local)
-                  · Ya tengo carpeta local   → usa tal cual, detecta remote si existe
-                  · Empiezo desde cero       → crea carpeta, clona template del stack,
-                                               crea repo en GitHub y hace primer push
-   Multi-repo   → pega TODAS las URLs / rutas de una vez (una por línea)
-                  Detecta owner/repo desde el remote origin
-                  Clona los que aún no están locales
-                  Luego, por cada repo, pregunta solo: rol, puerto y stack
-
-   Normalización de branches (automático en cada repo):
-      · Default master  → ofrece rename a main (no bloquea si el dev rehúsa)
-      · dev obligatoria → se crea desde la default si no existe
-      · staging opcional → se pregunta; default: no crearla
-
-5. Contexto del proyecto
-   Descripción del proyecto (1-2 frases)
-   Dominio: ecommerce, SaaS B2B, fintech, CRM, salud, educación, logística, otro
-
-6. Skills
-   Elige cuáles incluir de la lista disponible
-
-7. Integraciones MCP (opcional)
-   Notion, Linear, Slack, Sentry, Postgres
-
-8. GitHub Project (opcional)
-   Usar uno existente  → pega número o URL del project
-   Elegir de la lista  → lista tus projects con gh project list
-   Crear uno nuevo     → gh project create
-   Ninguno             → salta el paso
-
-9. Resumen
-   Árbol de todo lo generado + próximos pasos
-```
-
-## Actualizar un workspace existente
-
-Cuando salga una nueva versión de `workspace-template` con skills nuevos o mejoras, puedes traer los cambios sin perder tu configuración personalizada:
-
+**Con Node.js:**
 ```bash
-# Desde la raíz del workspace
-npx workspace-template update
-
-# O especificando un path
-npx workspace-template update /ruta/al/workspace
+npx workspace-template
 ```
 
-Qué hace:
+El CLI te guía paso a paso (en español).
 
-1. Lee la versión instalada desde `.claude/.workspace-version`.
-2. Compara hash por hash tus skills y rules contra los del paquete más reciente.
-3. Clasifica los cambios:
-   - **`+` nuevo** — skills que no tenías (aparece checkeado por defecto)
-   - **`~` actualizado** — cambió upstream sin que tú lo modificaras (checkeado)
-   - **`!` personalizado** — tú lo modificaste localmente (NO checkeado — confirma antes de sobrescribir)
-   - **`-` obsoleto** — ya no existe en el template actual (checkeado por defecto para eliminar)
-4. Te deja elegir qué aplicar y qué eliminar con checkboxes.
-5. Commitea los cambios en tu repo con un mensaje estándar.
+## Flujo de comandos
 
-Tus personalizaciones siempre se respetan salvo que las selecciones manualmente. Los archivos obsoletos se eliminan solo si los confirmas.
+Una vez configurado, en cualquier sesión de Claude Code tienes los siguientes comandos. **El flujo es conversacional** — no necesitas escribirlos manualmente. Si dices "planifiquemos esto" o "ya apliquemos", Claude lo interpreta y avanza solo.
 
-## Multi-repo: entrada en batch
+```mermaid
+flowchart TD
+    Start([Arrancar sesión]) --> Init["/init<br/>━━━━━━━<br/>• Lee issues / PRs / work-items<br/>• Posiciona en <code>dev</code><br/>• Detecta drift en tus ramas<br/>• Pregunta qué hacer"]
 
-Cuando eliges **multi-repo**, el CLI te deja pegar todos los repos de una vez, mezclando URLs y rutas locales:
+    Init --> Decide{¿Qué hacer?}
+    Decide -->|Continuar work-item<br/>en progreso| Apply
+    Decide -->|Empezar work-item<br/>asignado| Apply
+    Decide -->|Planificar algo<br/>nuevo| Plan
 
-```
-── Lista de repositorios del workspace ──
+    Plan["/plan<br/>━━━━━━━<br/>• Propone work-item + tasks<br/>• Pide CONFIRMACIÓN<br/>• Crea issues vinculados<br/>• Agrega al GitHub Project<br/>• Crea rama del work-item"]
+    Plan --> Apply
 
-Pega las URLs de GitHub o rutas locales de tus repos, una por línea.
-Cuando termines, deja una línea vacía y presiona Enter.
+    Apply["/apply<br/>━━━━━━━<br/>• Detecta drift vs <code>dev</code><br/>• Lee plan de la task activa<br/>• Implementa código<br/>• Corre tests<br/>• Marca subtareas hechas"]
+    Apply --> TestsOK{Tests OK?}
 
-  Repo 1: https://github.com/mi-org/api
-  Repo 2: https://github.com/mi-org/web
-  Repo 3: /home/user/code/mobile
-  Repo 4:  (enter vacío → fin)
-```
+    TestsOK -->|NO| Debug["/debug<br/>━━━━━━━<br/>• Analiza error / log<br/>• Identifica causa raíz<br/>• Aplica fix"]
+    Debug --> Apply
 
-Por cada entrada:
+    TestsOK -->|SÍ| Build["/build<br/>━━━━━━━<br/>• CONFIRMA commit<br/>• CONFIRMA push<br/>• Cierra la task"]
 
-- **URL GitHub** → clona al workspace (si ya existe, lo reutiliza).
-- **Ruta local** → usa el repo tal cual y detecta `owner/repo` desde el remote origin.
+    Build --> MoreTasks{¿Quedan más<br/>tasks en el<br/>work-item?}
+    MoreTasks -->|SÍ| Apply
+    MoreTasks -->|NO| FinalPR["/build<br/>━━━━━━━<br/>• Detecta drift BLOQUEANTE<br/>• CONFIRMA abrir PR único<br/>(todas las tasks → <code>dev</code>)"]
 
-Después, para cada repo detectado, solo te pregunta lo específico: **rol**, **puerto local** y **stack**.
+    FinalPR --> Review["/review<br/>━━━━━━━<br/>• Code review del PR<br/>• Checklist completo<br/>• Bloqueantes / mejoras"]
+    Review --> Merge([Merge a <code>dev</code>])
 
-## GitHub Project: existente o nuevo
+    Merge --> ToProd{¿Va a<br/>producción?}
+    ToProd -->|NO| Stay([Sigue en <code>dev</code>])
+    ToProd -->|SÍ| Secure["/secure<br/>━━━━━━━<br/>Checklist BLOQUEANTE:<br/>• env vars<br/>• secrets en GitHub<br/>• CVEs<br/>• Dockerfile / CI"]
 
-El paso 8 te ofrece 4 caminos para enlazar el workspace con un tablero de issues:
+    Secure --> Deploy["/deploy<br/>━━━━━━━<br/>• Genera Dockerfile<br/>• GitHub Actions<br/>• Configura secrets<br/>• Primer deploy"]
 
-El CLI pregunta primero el **owner del Project** (org o usuario), con el owner del repo como valor por defecto. Puedes cambiarlo si el Project pertenece a una org distinta al repo o a tu cuenta personal.
+    Deploy --> Broke{¿Algo se<br/>rompió?}
+    Broke -->|NO| Done([Producción ✓])
+    Broke -->|SÍ| Rollback["/rollback<br/>━━━━━━━<br/>• Revierte deploy<br/>• Crea post-mortem"]
 
-| Opción | Qué hace |
-|---|---|
-| **Usar uno que ya tengo** | Pegas el número (`5`) o URL (`.../projects/5`) y el CLI lo verifica con `gh project view` |
-| **Elegir de la lista** | Ejecuta `gh project list --owner <owner>` y te muestra todos los projects para seleccionar |
-| **Crear uno nuevo** | Ejecuta `gh project create` con el nombre que le des |
-| **Ninguno** | Salta el paso sin hacer nada |
+    classDef cmd fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
+    classDef decision fill:#3d2817,stroke:#d4861f,stroke-width:2px,color:#fff
+    classDef terminal fill:#1f3a1f,stroke:#5cb85c,stroke-width:2px,color:#fff
+    class Init,Plan,Apply,Debug,Build,FinalPR,Review,Secure,Deploy,Rollback cmd
+    class Decide,TestsOK,MoreTasks,ToProd,Broke decision
+    class Start,Merge,Stay,Done terminal
 
-La configuración del Project (`number`, `owner`, `url`, `title`) queda guardada en `.claude/.workspace-version`. El skill `/plan` la lee automáticamente para vincular cada issue al Project sin pedirte el número cada vez.
-
-## Qué genera
-
-```
-<workspace o repo>/
-├── CLAUDE.md                          ← contexto del proyecto (adaptado al tipo y stack)
-├── .claude/
-│   ├── rules/
-│   │   ├── commits.md                 ← conventional commits
-│   │   ├── branching.md               ← política 3 branches (main/staging/dev)
-│   │   ├── tests.md                   ← reglas de testing
-│   │   └── typescript.md              ← reglas de stack (según lo que elegiste)
-│   ├── skills/
-│   │   └── <skill>/
-│   │       └── SKILL.md               ← formato requerido por Claude Code
-│   └── settings.json                  ← config MCP (si elegiste integraciones)
-└── .github/
-    ├── ISSUE_TEMPLATE/
-    │   ├── feature.md
-    │   ├── bug.md
-    │   └── epic.md
-    └── pull_request_template.md
+    click Init "templates/skills/init.md" "Ver skill /init"
+    click Plan "templates/skills/plan.md" "Ver skill /plan"
+    click Apply "templates/skills/apply.md" "Ver skill /apply"
+    click Debug "templates/skills/debug.md" "Ver skill /debug"
+    click Build "templates/skills/build.md" "Ver skill /build"
+    click FinalPR "templates/skills/build.md" "Ver skill /build"
+    click Review "templates/skills/review.md" "Ver skill /review"
+    click Secure "templates/skills/secure.md" "Ver skill /secure"
+    click Deploy "templates/skills/deploy.md" "Ver skill /deploy"
+    click Rollback "templates/skills/rollback.md" "Ver skill /rollback"
 ```
 
-En **multi-repo**, esta estructura se genera tanto en la raíz del workspace como dentro de cada repo (cada repo es autosuficiente con su propio `CLAUDE.md` y `.claude/`).
+### Resumen rápido
 
-## Comandos disponibles
-
-Todos los comandos son skills de Claude Code invocables con `/comando`.
-
-### Flujo principal
-
-| Comando | Qué hace |
-|---|---|
-| `/init` | Orienta: lee estado del repo, issues activos y rama actual |
-| `/plan` | Planifica: crea issues, epics y sub-issues en GitHub |
-| `/apply` | Ejecuta: toma el issue activo, implementa el código y corre tests |
-| `/test` | Verifica: corre el suite completo, reporta cobertura e identifica huecos |
-| `/build` | Guarda: commit + push + comenta progreso en el issue |
-| `/review` | Revisa: code review del PR con perspectiva fresca |
-| `/secure` | Valida: pre-deploy checklist (env vars, secrets, deps, Dockerfile) |
-| `/deploy` | Publica: genera Dockerfile, GitHub Actions y `.env.example` |
-
-```
-/init → /plan → /apply → /test → /build → /review → /secure → /deploy
-                   ↑                          ↑
-                /debug                      /sync
-           (si algo falla)           (si el plan derivó)
-```
+| Etapa | Comando | Para qué |
+|---|---|---|
+| Arrancar | [`/init`](templates/skills/init.md) | Lee estado, work-items activos, sincroniza con `dev` |
+| Planificar | [`/plan`](templates/skills/plan.md) | Crea work-item (feature / refactor / fix / chore) + tasks |
+| Implementar | [`/apply`](templates/skills/apply.md) | Trabaja la task activa, corre tests |
+| Guardar | [`/build`](templates/skills/build.md) | Commit + push + abre PR cuando todas las tasks cierran |
+| Revisar | [`/review`](templates/skills/review.md) | Code review del PR antes de mergear |
+| Pre-deploy | [`/secure`](templates/skills/secure.md) | Checklist bloqueante (env vars, secrets, CVEs) |
+| Deploy | [`/deploy`](templates/skills/deploy.md) | Genera Dockerfile, GitHub Actions, primer deploy |
 
 ### Comandos de soporte
 
-| Comando | Qué hace |
-|---|---|
-| `/debug` | Analiza un error o log, identifica la causa raíz y aplica el fix |
-| `/audit` | Revisión de seguridad profunda del código (OWASP Top 10, auth, lógica sensible) |
-| `/pentest` | Barrida completa de seguridad sobre todo el proyecto (secrets, CVEs, endpoints, infra) |
-| `/sync` | Detecta drift entre el código real y el plan en GitHub, reconcilia issues |
-| `/rollback` | Revierte el último deploy de forma segura y crea issue de post-mortem |
-| `/design` | UI/UX: estilos, componentes, paletas, accesibilidad |
-| `/triage` | Limpieza: cierra issues cubiertos y mueve estados en bulk |
-| `/cross` | Multi-repo: coordina cambios que afectan varios repos a la vez |
-| `/setup` | Refresh: regenera `CLAUDE.md` y config de un repo individual |
-| `/branches` | Normaliza el modelo de branches: `main` + `dev` (obligatoria) + `staging` opcional |
+```mermaid
+flowchart LR
+    A["/branches<br/>Audita y normaliza<br/>main / dev / staging"]
+    B["/sync<br/>Drift entre código<br/>y plan en GitHub"]
+    C["/cross<br/>Cambios que afectan<br/>varios repos"]
+    D["/audit<br/>Revisión OWASP<br/>profunda"]
+    E["/pentest<br/>Barrida completa<br/>de seguridad"]
+    F["/triage<br/>Limpieza de issues<br/>y board"]
+    G["/design<br/>UI/UX, estilos,<br/>accesibilidad"]
+    H["/setup<br/>Regenera CLAUDE.md<br/>de un repo"]
 
-### Agregar un comando propio
+    classDef support fill:#2d2d44,stroke:#9b6dff,stroke-width:2px,color:#fff
+    class A,B,C,D,E,F,G,H support
 
-1. Crea la carpeta `.claude/skills/<nombre>/` en el workspace
-2. Dentro crea `SKILL.md` con este encabezado:
-   ```markdown
-   ---
-   name: <nombre>
-   description: Qué hace y cuándo invocarlo
-   ---
+    click A "templates/skills/branches.md" "Ver skill /branches"
+    click B "templates/skills/sync.md" "Ver skill /sync"
+    click C "templates/skills/cross.md" "Ver skill /cross"
+    click D "templates/skills/audit.md" "Ver skill /audit"
+    click E "templates/skills/pentest.md" "Ver skill /pentest"
+    click F "templates/skills/triage.md" "Ver skill /triage"
+    click G "templates/skills/design.md" "Ver skill /design"
+    click H "templates/skills/setup.md" "Ver skill /setup"
+```
 
-   # /<nombre>
-   ...instrucciones...
-   ```
-3. Claude Code lo reconoce automáticamente como `/<nombre>`
+### Reglas clave del flujo
 
-## Integraciones MCP
+1. **Toda planificación bajo un work-item padre** (feature / refactor / fix / chore).
+2. **Una rama por work-item**, prefijo según su tipo (`feature/N-...`, `refactor/N-...`, `fix/N-...`, `chore/N-...`).
+3. **Una task = un commit** (Conventional Commits con doble referencia).
+4. **Un work-item = un PR único** al cerrar todas sus tasks.
+5. **Confirmación obligatoria** antes de commit, push y apertura de PR.
+6. **Drift detection automático** en `/init`, `/apply`, `/build` — Claude avisa si tu rama está atrás de `dev` y ofrece sincronizar.
+7. **Conversacional** — Claude interpreta intención y avanza solo, sin que escribas cada slash command.
 
-MCP (Model Context Protocol) conecta a Claude con herramientas externas directamente desde el editor.
+## Modelo de trabajo
 
-| Integración | Variable de entorno |
-|---|---|
-| Notion | `NOTION_API_KEY` |
-| Linear | `LINEAR_API_KEY` |
-| Slack | `SLACK_BOT_TOKEN`, `SLACK_TEAM_ID` |
-| Sentry | `SENTRY_AUTH_TOKEN` |
-| Postgres | `DATABASE_URL` |
-| Context7 | — (sin credenciales, inyecta docs de SDKs actualizadas) |
-| n8n | `N8N_API_KEY`, `N8N_BASE_URL` |
+Toda planificación se agrupa bajo un **work-item padre** (issue con label `feature`, `refactor`, `fix` o `chore`). Sus **tasks** son sub-issues vinculados nativamente. Una rama por work-item, un commit por task, **un solo PR** al cerrar todas las tasks.
 
-La configuración queda en `.claude/settings.json` bajo `mcpServers`. Para agregar más integraciones después, edita ese archivo.
+```mermaid
+flowchart TD
+    Parent["<b>[FEATURE] #12</b><br/>Sistema de pagos<br/><i>(work-item padre)</i>"]
+
+    Parent --> T1["<b>#42 — task</b><br/><code>feat: Webhook handler</code>"]
+    Parent --> T2["<b>#43 — task</b><br/><code>feat: Endpoint /payments</code>"]
+    Parent --> T3["<b>#44 — task</b><br/><code>refactor: Cálculo de impuestos</code>"]
+
+    T1 -.->|1 commit| C1["<code>feat(payments): webhook (#42)<br/>— feature #12</code>"]
+    T2 -.->|1 commit| C2["<code>feat(payments): endpoint (#43)<br/>— feature #12</code>"]
+    T3 -.->|1 commit| C3["<code>refactor(payments): impuestos (#44)<br/>— feature #12</code>"]
+
+    C1 --> Branch["Rama: <code>feature/12-sistema-pagos</code><br/>(creada desde <code>dev</code>)"]
+    C2 --> Branch
+    C3 --> Branch
+
+    Branch --> PR(["<b>1 solo PR</b> hacia <code>dev</code><br/>cuando todas las tasks están cerradas"])
+
+    classDef parent fill:#3d2817,stroke:#d4861f,stroke-width:2px,color:#fff
+    classDef task fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
+    classDef commit fill:#2d2d44,stroke:#9b6dff,stroke-width:1px,color:#fff
+    classDef branch fill:#1f3a1f,stroke:#5cb85c,stroke-width:2px,color:#fff
+    class Parent parent
+    class T1,T2,T3 task
+    class C1,C2,C3 commit
+    class Branch,PR branch
+```
+
+**Prefijo de la rama según el tipo del work-item:**
+`feature/N-...`, `refactor/N-...`, `fix/N-...`, `chore/N-...`
+
+**Tasks descubiertas durante el desarrollo** se agregan al mismo work-item padre (si forman parte de cerrar bien lo que estás haciendo). Si es un problema de algo ya en producción → nuevo work-item de tipo `fix`.
+
+## Single-repo vs Multi-repo
+
+- **Single-repo**: un solo repositorio. Tres caminos: ya en GitHub, carpeta local, desde cero (clona template del stack).
+- **Multi-repo**: varios repos en una carpeta workspace. Pegas todas las URLs / rutas de una vez. Cada repo es autosuficiente con su propio `CLAUDE.md`.
+
+## Actualizar un workspace existente
+
+```bash
+npx workspace-template update
+```
+
+Compara hash por hash skills y rules contra el paquete actual. Marca cada cambio como nuevo (`+`), actualizado (`~`), personalizado (`!`) o obsoleto (`-`). Eliges qué aplicar — tus personalizaciones se respetan por defecto.
 
 ## Stacks soportados
 
-| Stack | Regla generada | Template oficial |
-|---|---|---|
-| Next.js / React | `typescript.md` | [Dev3ch/react_template](https://github.com/Dev3ch/react_template) |
-| Vue / Nuxt | `typescript.md` | — |
-| Django | `python-django.md` | [Dev3ch/django_template](https://github.com/Dev3ch/django_template) |
-| FastAPI | `python-fastapi.md` | — |
-| React Native | `typescript.md` | [Dev3ch/react_template](https://github.com/Dev3ch/react_template) |
-| Flutter | `flutter.md` | [Dev3ch/flutter_template](https://github.com/Dev3ch/flutter_template) |
-| Go | `go.md` | [Dev3ch/go_template](https://github.com/Dev3ch/go_template) |
-| Otro (texto libre) | genérica | — |
+Next.js / React, Vue / Nuxt, Django, FastAPI, React Native, Flutter, Go, o cualquier otro como texto libre. Si el repo tiene manifest detectable (`package.json`, `pyproject.toml`, `go.mod`, etc.), el CLI lo detecta automáticamente. Si no, no te pregunta por stack — sirve igual para repos de configuración o agentes.
 
-Cuando eliges **"Empiezo desde cero"**, el CLI clona automáticamente el template oficial del stack seleccionado, desconecta el remote original y crea un nuevo repo en GitHub a tu nombre.
+## Integraciones MCP
 
-## Herramientas opcionales recomendadas
+Notion, Linear, Slack, Sentry, Postgres, Context7, n8n. La config queda en `.claude/settings.json`.
 
-Estas herramientas no son instaladas por el CLI pero potencian el workflow con Claude Code:
+## Requisitos
 
-### MCPs adicionales
+- Node.js 18+ (recomendado: 22 LTS)
+- `git` y `gh` (GitHub CLI)
 
-| MCP | Para qué | Configuración |
-|---|---|---|
-| `n8n-mcp` | Crear y gestionar workflows N8N desde Claude Code | `.mcp.json` |
-| `context7` | Docs actualizadas de SDKs inyectadas en el prompt | `npx ctx7 setup` |
+El CLI detecta lo que falta y muestra el comando de instalación según tu OS.
 
-### Librerías globales
+## Más
 
-| Librería | Para qué | Instalación |
-|---|---|---|
-| `@playwright/cli` | Automatización de navegador (formularios, portales, dashboards) | `npm install -g @playwright/cli@latest` |
-| `@railway/cli` | Deploy a Railway desde terminal | `npm install -g @railway/cli` |
-| `flyctl` | Deploy a Fly.io desde terminal | `curl -L https://fly.io/install.sh \| sh` |
+- [CHANGELOG.md](CHANGELOG.md) — todas las versiones y cambios
+- [docs/flujo-autenticacion.md](docs/flujo-autenticacion.md) — cómo el CLI resuelve credenciales
 
-### Skills de la comunidad
+## Licencia
 
-| Skill | Para qué | Fuente |
-|---|---|---|
-| `ui-ux-pro-max` | 50+ estilos, 161 paletas, 57 font pairings para UI/UX | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) |
-
-## GitHub auth
-
-Si no tienes `gh` autenticado, el CLI te explica:
-
-- Scopes necesarios: `repo`, `read:org`, `project`
-- Comando: `gh auth login`
-- Formato de URL con token para evitar problemas de permisos SSH:
-  ```
-  https://<usuario>:<token>@github.com/<org>/<repo>.git
-  ```
-
-## Dependencias
-
-| Paquete | Uso |
-|---|---|
-| `@inquirer/prompts` | Prompts interactivos |
-| `handlebars` | Templates para CLAUDE.md |
-| `chalk` | Colores en terminal |
-| `execa` | Ejecución segura de comandos shell |
-| `ora` | Spinners de progreso |
-
-## Requisitos del sistema
-
-- Node.js 18 o superior (recomendado: 22 LTS)
-- `git` instalado
-- `gh` (GitHub CLI) instalado y autenticado
-
-El CLI detecta automáticamente si alguno falta y te muestra cómo instalarlo.
-
-## Historial de cambios
-
-Ver [CHANGELOG.md](CHANGELOG.md) para el detalle de cada versión.
+MIT

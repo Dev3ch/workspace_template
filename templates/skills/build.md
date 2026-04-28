@@ -62,6 +62,18 @@ git commit -m "<tipo>(<scope>): descripción de la task (#<TASK_N>) — <tipo-pa
 
 ### 3. Confirmar push con el dev
 
+**Chequeo silencioso de drift antes del push:** si han pasado más de 10 minutos desde el último chequeo (`_DRIFT_LAST_CHECK_AT`), hacer `git fetch origin dev --quiet` y comparar. Si la rama está atrás, mencionarlo en el prompt:
+
+```
+¿Pusheamos a origin/feature/12-sistema-pagos-stripe? [S/n]
+
+  ℹ  Heads-up: dev avanzó 2 commits desde tu último chequeo.
+     Cuando termines la última task del work-item, te avisaré para sincronizar
+     antes del PR.
+```
+
+Si está al día, prompt simple:
+
 ```
 ¿Pusheamos a origin/feature/12-sistema-pagos-stripe? [S/n]
 ```
@@ -113,11 +125,37 @@ query($owner: String!, $repo: String!, $number: Int!) {
 
 ### 6. Cerrar el work-item y abrir el PR (con confirmación)
 
+**Antes de abrir el PR: chequeo crítico de drift contra dev.**
+
+```bash
+git fetch origin dev --quiet
+BEHIND=$(git rev-list --count "$WORK_BRANCH..origin/dev" 2>/dev/null || echo 0)
+```
+
+Si `BEHIND > 0`, **bloquear la apertura del PR** y avisar:
+
+```
+Todas las tasks del work-item #12 están cerradas.
+
+⚠  Antes de abrir el PR: la rama está 7 commits atrás de dev.
+   Si abres el PR sin sincronizar, GitHub mostrará conflictos o el reviewer
+   verá un diff sucio con cambios que no son tuyos.
+
+¿Sincronizar con dev primero?
+  1. Sí, rebase (recomendado)
+  2. Sí, merge (si compartes la rama con otro dev)
+  3. No, abrir el PR igualmente (riesgo: conflictos en GitHub)
+```
+
+Si elige rebase/merge, sincronizar y luego mostrar la confirmación de apertura del PR.
+
+Si la rama está al día con dev (`BEHIND == 0`), saltar al prompt directo:
+
 ```
 Todas las tasks del work-item #12 están cerradas.
 
 ¿Abrimos el PR del work-item completo hacia dev? [S/n]
-  Rama: feature/12-sistema-pagos-stripe → dev
+  Rama: feature/12-sistema-pagos-stripe → dev (al día con origin)
   Tasks incluidas: #42, #43, #44
 ```
 

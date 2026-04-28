@@ -8,6 +8,25 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.1.1] — 2026-04-28
+
+Versión centrada en **drift detection**: cuando varios devs trabajan en paralelo, las ramas de work-items se quedan atrás de `dev` mientras otros van mergeando. Claude ahora chequea drift en puntos naturales del flujo y ofrece sincronizar (rebase / merge) con confirmación, sin nunca hacerlo solo. También se ajusta la pregunta de stack para repos sin manifest detectable.
+
+### Added
+
+- **Drift detection en `/init`** — después de posicionarse en `dev`, lista las ramas locales de work-items (`feature/*`, `refactor/*`, `fix/*`, `chore/*`, `hotfix/*`) que están atrás de `origin/dev` y ofrece sincronizarlas. Default: rebase. Si hay commits pusheados compartidos: ofrece merge.
+- **Drift detection en `/apply`** — antes de tocar código, si la rama del work-item está atrás de `dev`, avisa y ofrece rebase / merge / continuar. Tras un chequeo se marca `_DRIFT_LAST_CHECK_AT` para no rechecar en los próximos 10 minutos.
+- **Drift detection en `/build`** — chequeo silencioso antes del push (heads-up si dev avanzó) y chequeo **bloqueante** antes de abrir el PR. Si la rama está atrás, el PR no se abre hasta sincronizar — evita conflictos en GitHub y diff sucio para el reviewer.
+- **Regla operativa 16 en `CLAUDE.md.hbs`** — documenta los puntos de chequeo, las estrategias (rebase como default, merge si la rama es compartida, `--force-with-lease` nunca `--force` puro), y la garantía de que Claude nunca rebasa ni mergea solo.
+- **Triggers por intención textual** — "¿estamos al día?", "actualízame la rama", "¿hubo cambios en dev?" → trigger inmediato del chequeo.
+
+### Fixed
+
+- **Pregunta de stack innecesaria al clonar repos sin manifest detectable.** Cuando se incorporaba un repo existente que no tenía `package.json`, `pyproject.toml`, `go.mod`, etc. (típicamente plantillas, repos de configuración o agentes), el CLI forzaba a elegir uno de los stacks tradicionales aunque no aplicara. Ahora `resolveStacks` pregunta primero si el repo realmente usa un stack tradicional antes de mostrar la lista; si el dev dice no, continúa con stack vacío y el `CLAUDE.md` se genera con `Sin stack específico`.
+- **`stackLabel([])` devolvía string vacío** que se renderizaba como `Stack: ` en el `CLAUDE.md`. Ahora devuelve `Sin stack específico` cuando no hay stacks asociados.
+
+---
+
 ## [1.1.0] — 2026-04-28
 
 Versión centrada en **modelo work-item / task**: reemplaza el concepto de "épica + sub-issues" por un patrón generalizado y alineado con la industria. Cualquier trabajo se planifica como un **work-item padre** (`feature`, `refactor`, `fix` o `chore`) que agrupa **tasks** vinculadas nativamente como sub-issues. Una rama por work-item, un commit por task, **un solo PR al cerrar el work-item**.
@@ -360,7 +379,8 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Dev3ch/workspace_template/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Dev3ch/workspace_template/compare/v1.0.9...v1.1.0
 [1.0.9]: https://github.com/Dev3ch/workspace_template/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/Dev3ch/workspace_template/compare/v1.0.7...v1.0.8

@@ -102,6 +102,34 @@ fi
 
 Si `dev` no existe en el remote → **abortar `/apply`** e invocar `/branches` primero.
 
+**Chequeo de drift contra `dev`:**
+
+Antes de empezar a tocar código, verificar si la rama del work-item está atrás de `origin/dev`:
+
+```bash
+git fetch origin dev --quiet
+BEHIND=$(git rev-list --count "$WORK_BRANCH..origin/dev" 2>/dev/null || echo 0)
+```
+
+Si `BEHIND > 0`, avisar y ofrecer sincronizar **antes** de codear:
+
+```
+Rama actual: feature/12-sistema-pagos (3 commits atrás de origin/dev)
+
+⚠  La rama está desactualizada. Trabajar sin sincronizar puede causar conflictos.
+
+¿Sincronizar con dev antes de continuar?
+  1. Sí, hacer rebase (recomendado — historia limpia)
+  2. Sí, hacer merge (si compartes la rama con otro dev)
+  3. No, continuar sin sincronizar
+```
+
+Si elige rebase: `git rebase origin/dev` + `git push --force-with-lease`. Si hay conflictos, pausar y pedir al dev que resuelva.
+
+Si elige merge: `git merge origin/dev` + `git push`.
+
+Si el dev ya hizo este chequeo en esta sesión hace menos de 10 minutos (`_DRIFT_LAST_CHECK_AT`), saltar este paso silenciosamente. Tras un chequeo, actualizar el timestamp.
+
 **Excepciones:**
 - **Hotfix urgente** → rama `hotfix/<N>-<slug>` desde `main`. Confirmar con el dev.
 - **Task suelta sin work-item padre** → preguntar al dev si crear un work-item que la agrupe (incluso con una sola task). El patrón se mantiene uniforme.
