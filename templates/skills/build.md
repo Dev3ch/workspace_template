@@ -1,11 +1,11 @@
 ---
 name: build
-description: Commit + push + comenta progreso en el issue activo. Usar al cerrar sesión o terminar una tarea.
+description: Commit + push de la task. Comenta progreso. Al cerrar la última task del work-item, ofrece abrir el PR único.
 ---
 
 # /build
 
-Guarda el progreso de la sesión en GitHub y hace push del trabajo.
+Guarda el progreso de la sesión en GitHub. Hace commit por task cerrada y push al remote. Cuando todas las tasks del work-item están cerradas, ofrece abrir el PR único hacia `dev`.
 
 ## Credenciales de GitHub
 
@@ -17,7 +17,7 @@ Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
 
 ## Cuándo invocar
 
-Al final de cada sesión de trabajo, o cuando el dev pide guardar progreso.
+Después de `/apply`, cuando una task está terminada y los tests pasan. También al cerrar sesión si quedan cambios sin commitear.
 
 ## Pasos
 
@@ -28,100 +28,164 @@ git status
 git diff --stat
 ```
 
-### 2. Hacer commit de los cambios pendientes
+### 2. Confirmar commit con el dev
 
-Si hay cambios sin commitear, hacer commit con mensaje descriptivo:
+**Nunca commitear sin preguntar.** Mostrar al dev el resumen de cambios y preguntar:
+
+```
+Cambios listos para commit:
+  M apps/payments/views.py
+  M apps/payments/serializers.py
+  A tests/payments/test_webhook.py
+
+Work-item activo:  [FEATURE] #12 — Sistema de pagos con Stripe
+Task activa:       #42 — feat: Webhook handler
+Tipo de commit:    feat (Conventional Commits)
+Mensaje propuesto: "feat(payments): webhook handler de Stripe (#42) — feature #12"
+
+¿Hacemos commit? [S/n]
+```
+
+Si confirma:
 
 ```bash
 git add <archivos-relevantes>
-git commit -m "wip(scope): descripción del progreso #N"
+git commit -m "<tipo>(<scope>): descripción de la task (#<TASK_N>) — <tipo-padre> #<PARENT_N>"
 ```
 
-### 3. Push
+**Reglas del mensaje (Conventional Commits):**
+- `<tipo>` = tipo de la task (`feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`).
+- `<scope>` = módulo afectado (ej: `payments`, `auth`, `api`).
+- `<tipo-padre>` = tipo del work-item (`feature`, `refactor`, `fix`, `chore`).
 
-```bash
-git push origin <branch-actual>
+**Un commit = una task cerrada.** Si en una sesión cerraron dos tasks, son dos commits separados.
+
+### 3. Confirmar push con el dev
+
+```
+¿Pusheamos a origin/feature/12-sistema-pagos-stripe? [S/n]
 ```
 
-Si el branch no tiene upstream:
+Si confirma:
+
 ```bash
-git push -u origin <branch-actual>
+git push origin <work-branch>
 ```
 
-### 3.5 Ofrecer abrir PR contra `dev`
+Si la rama no tiene upstream:
+```bash
+git push -u origin <work-branch>
+```
 
-Si el branch actual es `feat/*`, `fix/*` o `chore/*` y aún no hay PR abierto,
-preguntar al dev si crear uno ya. La base es **siempre `dev`** (los PR hacia
-`staging` o `main` son promociones, no features).
+### 4. Cerrar la task y registrar el commit
 
 ```bash
-BRANCH=$(git branch --show-current)
-EXISTING_PR=$(gh pr list --head "$BRANCH" --base dev --json number --jq '.[0].number')
+COMMIT_SHA=$(git rev-parse HEAD)
+gh issue comment $TASK_N --body "Implementado en \`$COMMIT_SHA\`. Closes #$TASK_N."
+gh issue close $TASK_N
+gh issue edit $TASK_N --remove-label "in-progress"
+```
 
-if [ -z "$EXISTING_PR" ] && echo "$BRANCH" | grep -qE '^(feat|fix|chore)/'; then
-  # Preguntar al dev si quiere abrir el PR ahora
-  gh pr create --base dev --head "$BRANCH" \
-    --title "feat: <título del issue> (#<N>)" \
-    --body "Closes #<N>
+Marcar el checkbox correspondiente en el body del work-item padre.
+
+### 5. ¿Quedan más tasks en el work-item?
+
+```bash
+gh api graphql -f query='
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      subIssues(first: 50) {
+        nodes { number title state }
+      }
+    }
+  }
+}' -f owner="<owner>" -f repo="<repo>" -F number=$PARENT_N
+```
+
+**Si quedan tasks abiertas:**
+- No abrir PR todavía. El work-item sigue en progreso.
+- Preguntar al dev: "¿Continuamos con la siguiente task #N?"
+- Si confirma, marcar la siguiente task con label `in-progress` y volver a `/apply`.
+
+**Si todas las tasks están cerradas (work-item completo):**
+- Pasar al paso 6.
+
+### 6. Cerrar el work-item y abrir el PR (con confirmación)
+
+```
+Todas las tasks del work-item #12 están cerradas.
+
+¿Abrimos el PR del work-item completo hacia dev? [S/n]
+  Rama: feature/12-sistema-pagos-stripe → dev
+  Tasks incluidas: #42, #43, #44
+```
+
+Si confirma:
+
+```bash
+# Determinar el tipo de commit del PR según el tipo del work-item
+PR_TYPE="feat"   # feature → feat, fix → fix, refactor → refactor, chore → chore
+
+gh pr create --base dev --head "$WORK_BRANCH" \
+  --title "${PR_TYPE}(<scope>): Sistema de pagos con Stripe (feature #${PARENT_N})" \
+  --body "$(cat <<EOF
+Closes #${PARENT_N}
+
+## Tasks incluidas
+- Closes #42 — feat: Webhook handler
+- Closes #43 — feat: Endpoint /payments/intent
+- Closes #44 — refactor: Extraer cálculo de impuestos
 
 ## Resumen
-- <1-3 bullets del cambio>
+- <1-3 bullets del cambio global del work-item>
 
 ## Test plan
-- [ ] <qué probar>"
-fi
-```
-
-Si ya existe PR → solo agregar un comentario con el progreso de esta sesión.
-
-Si son **múltiples** cambios en repos distintos (multi-repo), abrir un PR por
-repo — nunca consolidar repos distintos en un solo PR. Si los cambios de un
-mismo repo corresponden a issues distintos, también van en PRs separados
-(un issue = un branch = un PR por repo).
-
-### 4. Actualizar el issue con el progreso
-
-Crear un comment en el issue activo con:
-- Qué se hizo en esta sesión
-- Estado actual (qué falta)
-- Próximo paso para la siguiente sesión
-- Links a commits o archivos modificados relevantes
-
-```bash
-gh issue comment <N> --body "$(cat <<'EOF'
-## Progreso sesión $(date +%Y-%m-%d)
-
-**Hecho:**
-- [descripción de lo implementado]
-
-**Estado:** [En progreso / Listo para review / Bloqueado por X]
-
-**Próximo paso:**
-- [qué hacer en la siguiente sesión]
-
-**Archivos modificados:**
-- [lista de archivos clave]
+- [ ] <qué probar para validar el work-item completo>
 EOF
 )"
 ```
 
-### 5. Actualizar board (si aplica)
+Marcar el work-item con label `review` y quitar `in-progress`:
 
-Si el issue está listo para review:
 ```bash
-# Mover issue a "In Review" en el project board
-gh issue edit <N> --add-label "review"
+gh issue edit $PARENT_N --add-label "review" --remove-label "in-progress"
+```
+
+**Multi-repo:** si el work-item afecta varios repos, abrir un PR por repo (nunca consolidar repos distintos en un solo PR). Cada PR cierra las tasks que le corresponden a ese repo.
+
+### 7. Actualizar el work-item con el progreso global
+
+Comentar el work-item con un resumen de la sesión:
+
+```bash
+gh issue comment $PARENT_N --body "$(cat <<EOF
+## Progreso sesión $(date +%Y-%m-%d)
+
+**Tasks cerradas en esta sesión:**
+- #42 — feat: Webhook handler
+- #43 — feat: Endpoint /payments/intent
+
+**Pendientes:**
+- #44 — refactor: Extraer cálculo de impuestos
+
+**Estado:** [En progreso | PR abierto en review | Cerrado]
+EOF
+)"
 ```
 
 ## Siguiente paso
 
-- **Feature completa, PR listo para revisar** → `/review`
-- **Feature completa y va a main/staging** → `/secure` (pre-deploy) → `/deploy`
-- **Trabajo en progreso, continuar mañana** → `/init` en la próxima sesión
-- **Trabajo afecta otros repos del workspace** → `/cross` para coordinar
+- **Task cerrada, quedan más en el work-item** → `/apply` con la siguiente task
+- **Work-item completo, PR abierto** → `/review`
+- **Work-item completo y va a main/staging** → `/review` → `/secure` → `/deploy`
+- **Trabajo afecta otros repos** → `/cross` para coordinar
 
 ## Notas
 
+- **Confirmación obligatoria** antes de cada commit, push y apertura de PR. Nunca asumir.
+- **Un commit = una task.** No agrupar varias tasks en un commit.
+- **El PR se abre solo cuando todas las tasks están cerradas** y el dev confirma.
+- **Conventional Commits siempre.** El tipo del commit refleja la task, no el work-item padre.
+- Si el trabajo está en varios repos, hacer push en todos los que correspondan.
 - Nunca guardar progreso en archivos locales fuera del repo.
-- Si el trabajo está en varios repos, hacer push en todos.
-- Un comment por sesión, no spam de comments — editar el último si la sesión sigue.

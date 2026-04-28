@@ -28,7 +28,7 @@ Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
 | Rama | Rol | ¿Obligatoria? |
 |---|---|---|
 | `main` | Producción — solo recibe merges desde `staging` o hotfixes. | Sí (puede llamarse `master` legacy) |
-| `dev` | Integración — base de todas las `feat/*` y `fix/*`. | **Sí, siempre.** |
+| `dev` | Integración — base de todas las ramas de work-items (`feature/*`, `refactor/*`, `fix/*`, `chore/*`). | **Sí, siempre.** |
 | `staging` | Pre-producción / QA. | Opcional — preguntar al dev. |
 
 ## Pasos
@@ -128,7 +128,7 @@ Rama actual: dev
 
 ## Notas
 
-- **`dev` no es negociable.** Si el dev no quiere `dev`, es mejor no usar este workspace — su flujo asume la promoción `feat/* → dev → staging/main`.
+- **`dev` no es negociable.** Si el dev no quiere `dev`, es mejor no usar este workspace — su flujo asume la promoción `<work-item-branch>/* → dev → staging/main`.
 - **No cambiar la branch default del repo en GitHub** desde esta skill. Eso es decisión de admins del repo y puede romper CI, integraciones y protection rules.
 - **Protection rules** (require PR, 1 approval, no force-push) no se configuran aquí — se documentan en `.claude/rules/branching.md`. Si el equipo quiere aplicarlas programáticamente, hacerlo en un paso separado con `gh api repos/{o}/{r}/branches/{b}/protection`.
 - Si el repo está vacío (sin commits), `dev` no se puede crear hasta después del primer push.

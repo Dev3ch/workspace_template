@@ -2,13 +2,19 @@
 
 ## Formato
 
-Conventional Commits enforced por commitlint:
+Conventional Commits enforced por commitlint. **Cada commit corresponde a una task cerrada de un work-item**.
 
 ```
-<type>(<scope>): <description> #<issue>
+<tipo>(<scope>): <description> (#<task-N>) — <tipo-padre> #<parent-N>
 ```
 
 **Header máximo 100 caracteres.**
+
+- `<tipo>` = tipo de la task (`feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`).
+- `<scope>` = módulo o área afectada (`auth`, `api`, `payments`, `ui`, `db`, etc.).
+- `<task-N>` = número del issue de la task que se cierra con este commit.
+- `<tipo-padre>` = tipo del work-item padre (`feature`, `refactor`, `fix`, `chore`).
+- `<parent-N>` = número del work-item padre.
 
 ## Types válidos
 
@@ -27,33 +33,38 @@ Conventional Commits enforced por commitlint:
 | `style` | Formato, espacios, comas (sin cambio lógico) |
 | `revert` | Revertir un commit anterior |
 
-## Scope
-
-El scope es el módulo o área afectada: `auth`, `api`, `ui`, `db`, `infra`, etc.
-
 ## Ejemplos correctos
 
 ```
-feat(auth): add JWT refresh token endpoint #42
-fix(api): handle null organization_id in invoice list #58
-refactor(ui): extract InvoiceTable into reusable component #61
-docs(readme): update local setup instructions
-chore(deps): bump next.js to 16.2.0
-test(auth): add missing 403 test for non-org member #42
+feat(payments): webhook handler de Stripe (#42) — feature #12
+feat(payments): endpoint POST /payments/intent (#43) — feature #12
+refactor(payments): extraer cálculo de impuestos (#44) — feature #12
+test(payments): tests de integración del flujo (#45) — feature #12
+
+refactor(auth): eliminar JWT helper obsoleto (#50) — refactor #15
+fix(api): null organization_id en invoice list (#58) — fix #18
+chore(deps): bump next.js a 16.2.0 (#60) — chore #20
+```
+
+Para hotfixes urgentes en producción (rama `hotfix/*`, sin work-item padre):
+```
+hotfix(api): patch race condition en webhook #80
 ```
 
 ## Ejemplos incorrectos
 
 ```
-fix: stuff                    ← sin scope ni issue
-updated things                ← no es conventional
-feat(auth): Add JWT Token     ← mayúscula en descripción
-feat(auth): add JWT token.    ← punto al final
+fix: stuff                              ← sin scope ni referencia
+updated things                          ← no es conventional
+feat(auth): Add JWT Token (#42)         ← mayúscula en descripción
+feat(auth): add JWT token. (#42)        ← punto al final
+feat: webhook handler (#42)             ← sin scope
+feat(payments): webhook (#42)           ← falta referencia al work-item padre
 ```
 
 ## Reglas adicionales
 
-- Referencia el issue con `#N` al final de la descripción cuando aplica.
+- **Un commit = una task cerrada.** No mezclar cambios de varias tasks en el mismo commit.
 - Cuerpo del commit (body) opcional, separado por línea en blanco.
 - Footer para breaking changes: `BREAKING CHANGE: <descripción>`.
 - Incluir co-author cuando aplique:

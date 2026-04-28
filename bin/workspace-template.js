@@ -1056,7 +1056,7 @@ async function stepProjectContext() {
 const ALL_SKILLS = [
   // — Flujo principal (activados por defecto) —
   { value: 'init',     name: '/init     — Orientar: lee estado, issues activos y rama actual',              checked: true  },
-  { value: 'plan',     name: '/plan     — Planificar: crea issues, epics y sub-issues en GitHub',           checked: true  },
+  { value: 'plan',     name: '/plan     — Planificar: crea work-items (feature/refactor/fix/chore) y sus tasks',  checked: true  },
   { value: 'apply',    name: '/apply    — Ejecutar: toma el issue activo y lo implementa',                  checked: true  },
   { value: 'test',     name: '/test     — Verificar: corre suite, reporta cobertura, detecta huecos',       checked: true  },
   { value: 'build',    name: '/build    — Guardar: commit + push + comenta progreso en el issue',           checked: true  },

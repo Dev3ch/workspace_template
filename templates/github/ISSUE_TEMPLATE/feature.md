@@ -1,14 +1,20 @@
 ---
-name: Feature
-about: Nueva funcionalidad
-title: '[FEAT] '
+name: Feature (work-item)
+about: Funcionalidad nueva. Agrupa tasks bajo una rama y un PR único.
+title: '[FEATURE] '
 labels: feature
 assignees: ''
 ---
 
-## Descripción
+## Objetivo
 
-<!-- Qué hay que implementar y por qué -->
+<!-- Qué resuelve este work-item y qué valor entrega -->
+
+## Tasks
+
+<!-- Las tasks se crean como sub-issues vinculados nativamente -->
+
+- [ ] #
 
 ## Criterios de aceptación
 
@@ -16,8 +22,12 @@ assignees: ''
 
 ## Repos afectados
 
-<!-- Lista los repos que requieren cambios -->
+<!-- Lista los repos que impacta -->
 
 ## Notas técnicas
 
-<!-- Endpoint a crear, modelo a modificar, dependencias, etc. -->
+<!-- Decisiones de arquitectura, APIs a crear, modelos nuevos -->
+
+## Rama de trabajo
+
+`feature/<este-numero>-<slug>`

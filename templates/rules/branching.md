@@ -27,22 +27,32 @@ ya existentes, usar `/branches`.
 |---|---|---|
 | `main` | **Producción.** Solo recibe merges desde `staging` (y hotfixes). Tags de release. | 1 approval, status checks, no force-push, no deletion |
 | `staging` | **Pre-producción / QA.** Recibe merges desde `dev` al cerrar un release. | status checks, no force-push, no deletion |
-| `dev` | **Integración.** Default para features y fixes. | status checks, no force-push, no deletion |
-| `feat/*`, `fix/*`, `chore/*`, `hotfix/*` | Ramas de trabajo efímeras. | sin protección |
+| `dev` | **Integración.** Default para work-items. | status checks, no force-push, no deletion |
+| `feature/*`, `refactor/*`, `fix/*`, `chore/*`, `hotfix/*` | Ramas de trabajo efímeras (una por work-item). | sin protección |
 
-## Flujo estándar (feature / fix)
+## Flujo estándar (work-item + tasks)
 
-1. Asignarte un issue en GitHub Projects.
-2. Crear branch desde `dev`:
+Toda planificación se agrupa bajo un **work-item padre** (issue con label `feature`, `refactor`, `fix` o `chore`). Sus **tasks** son sub-issues vinculados nativamente.
+
+1. Crear el work-item con `/plan`. Ejemplo: `[FEATURE] Sistema de pagos con Stripe (#12)` con tasks `#42`, `#43`, `#44`.
+2. Crear branch desde `dev`. **El prefijo refleja el tipo del work-item:**
    ```bash
    git checkout dev && git pull
-   git checkout -b feat/issue-{N}-descripcion
+   git checkout -b feature/12-sistema-pagos-stripe
+   # o: refactor/15-migracion-auth, fix/18-race-condition, chore/20-update-deps
    ```
-3. Commits conventional referenciando issue: `feat(scope): descripción #N`.
-4. Abrir PR **contra `dev`**. Body incluye `Closes #N`.
-5. Code review.
-6. **Squash merge** → `dev`. Un commit limpio por feature.
-7. Si hubo aprendizaje nuevo, actualizar `CLAUDE.md` en el mismo PR.
+3. Implementar **una task a la vez**. Cada task cerrada genera **un commit** con Conventional Commits referenciando la task y el work-item:
+   ```
+   feat(payments): webhook handler de Stripe (#42) — feature #12
+   refactor(payments): extraer cálculo de impuestos (#43) — feature #12
+   ```
+4. Continuar implementando hasta cerrar todas las tasks del work-item.
+5. Abrir **un solo PR contra `dev`** cuando todas las tasks están cerradas. Body incluye `Closes #12` (work-item) y los `Closes #42, #43, #44` (tasks).
+6. Code review.
+7. **Squash o merge commit** → `dev`. El work-item se cierra al mergear.
+8. Si hubo aprendizaje nuevo, actualizar `CLAUDE.md` en el mismo PR.
+
+**Tasks descubiertas durante el desarrollo:** si encuentras algo que falta para cerrar bien el work-item, crear una nueva task hija del mismo padre. Si es un problema de código ya mergeado en producción, abrir un nuevo work-item de tipo `fix`.
 
 ## Promoción (release)
 
@@ -59,7 +69,8 @@ ya existentes, usar `/branches`.
 
 ## Reglas de merge
 
-- **Un issue = un branch = un PR** por repo afectado.
+- **Un work-item = un branch = un PR** por repo afectado.
+- Las **tasks no tienen su propio PR** — se commitean en la rama del work-item padre.
 - **Nunca** push directo a `main`, `staging` o `dev` — solo vía PR.
-- **Merge strategy**: `squash` en feat→dev; `merge commit` en dev→staging y staging→main.
+- **Merge strategy**: `squash` o `merge commit` en work-item→dev (a elección del equipo); `merge commit` en dev→staging y staging→main.
 - **No rebasear** branches protegidas.

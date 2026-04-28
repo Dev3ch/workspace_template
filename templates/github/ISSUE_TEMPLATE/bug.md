@@ -1,8 +1,8 @@
 ---
-name: Bug
-about: Reporte de error
-title: '[BUG] '
-labels: bug
+name: Fix / Bug (work-item)
+about: Corrección de un bug o comportamiento incorrecto. Agrupa tasks bajo una rama y un PR único.
+title: '[FIX] '
+labels: fix
 assignees: ''
 ---
 
@@ -30,6 +30,17 @@ assignees: ''
 (pegar aquí)
 ```
 
+## Tasks
+
+<!-- Si el fix se descompone en pasos (reproducir, parchear, validar), crear sub-issues -->
+
+- [ ] #
+
+## Criterios de aceptación
+
+- [ ] El bug ya no se reproduce
+- [ ] Hay un test que cubre el caso
+
 ## Repos afectados
 
 <!-- Lista los repos involucrados -->
@@ -38,3 +49,7 @@ assignees: ''
 
 - Rama: 
 - Versión: 
+
+## Rama de trabajo
+
+`fix/<este-numero>-<slug>`

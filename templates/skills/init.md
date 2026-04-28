@@ -76,14 +76,36 @@ git log --oneline -10
 # git -C <repo-path> status
 ```
 
-### 2. Revisar issues activos en GitHub
+### 2. Revisar work-items y tasks activas
+
+Los work-items son los issues padre con label `feature`, `refactor`, `fix` o `chore`. Las tasks son sus sub-issues.
 
 ```bash
-# Issues asignados al usuario
-gh issue list --assignee @me --state open --json number,title,labels,url
+# Work-items en progreso asignados a mí
+gh issue list --assignee @me --state open --label "in-progress" \
+  --json number,title,labels,url \
+  --jq '[.[] | select(.labels[] | .name | IN("feature","refactor","fix","chore"))]'
 
-# Issues en progreso (label o estado en project board)
-gh issue list --label "in-progress" --state open --json number,title,url
+# Work-items asignados sin label "in-progress" (planificados pero no arrancados)
+gh issue list --assignee @me --state open \
+  --json number,title,labels,url \
+  --jq '[.[] | select((.labels[].name) | IN("feature","refactor","fix","chore"))
+              | select(([.labels[].name] | index("in-progress")) | not)]'
+```
+
+Para cada work-item en progreso, listar sus tasks abiertas:
+
+```bash
+gh api graphql -f query='
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      subIssues(first: 50) {
+        nodes { number title state labels(first:10){ nodes{ name } } }
+      }
+    }
+  }
+}' -f owner="<owner>" -f repo="<repo>" -F number=<PARENT_N>
 ```
 
 ### 3. Revisar PRs abiertos
@@ -100,39 +122,46 @@ gh issue view <N> --json title,body,comments,assignees,labels,url
 
 ### 5. Presentar estado y preguntar al dev qué hacer
 
-Mostrar un resumen claro:
+Mostrar un resumen claro, agrupado por work-item:
 
 ```
 === Estado actual ===
 Rama: dev (al día con origin)
 
-Issues en progreso:
-  #42 — Agregar flujo de pago (feat/issue-42-payment-flow)
-  #38 — Refactor de auth
+Work-items en progreso:
+  [FEATURE] #12 — Sistema de pagos con Stripe (feature/12-sistema-pagos-stripe)
+    └─ ⏳ #42 — feat: Webhook handler (in-progress)
+    └─ □  #43 — feat: Endpoint /payments/intent
+    └─ □  #44 — refactor: Extraer cálculo de impuestos
 
-Issues asignados sin empezar:
-  #45 — Integrar notificaciones push
-  #47 — Migración de base de datos
+  [REFACTOR] #15 — Migración de auth a sessions
+    └─ ✅ #50 — refactor: Eliminar JWT helper
+    └─ ⏳ #51 — refactor: Adaptar middleware (in-progress)
+
+Work-items asignados sin empezar:
+  [FIX] #20 — Race condition en webhook
+  [FEATURE] #25 — Notificaciones push
 
 PRs abiertos:
-  #12 — feat: payment flow (draft)
+  #80 — feat: Sistema de pagos (work-item #12) [draft]
 ```
 
 Luego preguntar explícitamente:
 
 ```
 ¿Qué quieres hacer?
-  1. Continuar con un issue en progreso
-  2. Empezar un issue asignado
+  1. Continuar con un work-item en progreso
+  2. Empezar un work-item asignado sin arrancar
   3. Planificar algo nuevo → /plan
   4. Otra cosa
 ```
 
-Esperar respuesta del dev antes de continuar. No asumir.
+Esperar respuesta del dev. No asumir.
 
 ### 6. Orientación según la elección
 
-- **Opción 1 o 2:** mostrar el detalle del issue elegido, verificar que la rama existe y está al día, e indicar el próximo paso concreto (qué archivo tocar, qué función escribir).
+- **Opción 1:** mostrar el work-item, su task activa, verificar que la rama existe y está al día. Indicar el próximo paso concreto.
+- **Opción 2:** confirmar arrancar el work-item, crear la rama `<tipo>/<N>-<slug>` desde `dev`, marcar la primera task como `in-progress`.
 - **Opción 3:** invocar `/plan` directamente.
 - **Opción 4:** escuchar al dev.
 
@@ -142,15 +171,16 @@ Esperar respuesta del dev antes de continuar. No asumir.
 === Sesión iniciada ===
 Rama: dev (al día con origin)
 
-Issues en progreso:
-  #42 — Agregar flujo de pago con Stripe (feat/issue-42-payment-flow)
+Work-items en progreso:
+  [FEATURE] #12 — Sistema de pagos con Stripe
+    └─ task activa: #42 — feat: Webhook handler
 
-Issues asignados sin empezar:
-  #45 — Integrar notificaciones push
+Work-items asignados sin empezar:
+  [FIX] #20 — Race condition en webhook
 
 ¿Qué quieres hacer?
-  1. Continuar con #42 — flujo de pago
-  2. Empezar #45 — notificaciones push
+  1. Continuar con [FEATURE] #12 — task #42
+  2. Empezar [FIX] #20
   3. Planificar algo nuevo → /plan
   4. Otra cosa
 ```
@@ -159,8 +189,8 @@ Issues asignados sin empezar:
 
 Según la elección del dev:
 
-- **Continuar issue en progreso** → `/apply` en la rama existente
-- **Empezar issue asignado** → `/apply` (crea la rama desde `dev`)
+- **Continuar work-item en progreso** → `/apply` en la rama existente con la task activa
+- **Empezar work-item asignado** → `/apply` (crea la rama `<tipo>/<N>-<slug>` desde `dev`)
 - **Planificar algo nuevo** → `/plan`
 - **Otros devs hicieron cambios recientes** → `/sync` primero, luego volver aquí
 - **Hay un PR abierto esperando review** → `/review`
@@ -168,6 +198,7 @@ Según la elección del dev:
 
 ## Notas
 
-- Si no hay issues asignados, sugerir revisar el backlog del GitHub Project.
+- Si no hay work-items asignados, sugerir revisar el backlog del GitHub Project.
 - Nunca asumir contexto de sesiones anteriores — siempre leer desde GitHub.
-- **Base por defecto: `dev`.** Cualquier trabajo en `main` requiere confirmación explícita del dev y no persiste al reiniciar la sesión.
+- **Base por defecto: `dev`.** Cualquier trabajo en `main` requiere confirmación explícita y no persiste entre sesiones.
+- Los **work-items** agrupan trabajo coherente (feature, refactor, fix, chore). Las **tasks** son las piezas concretas dentro de un work-item. No hay tasks sin work-item padre.

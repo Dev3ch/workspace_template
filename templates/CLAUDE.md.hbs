@@ -85,14 +85,18 @@ Modelo **3 branches protegidas** (GitFlow-light):
 |---|---|
 | `main` | Producción. Solo recibe merges desde `staging` y hotfixes. |
 | `staging` | Pre-producción / QA. Recibe merges desde `dev`. |
-| `dev` | Integración. Default para features y fixes. |
-| `feat/*`, `fix/*`, `hotfix/*` | Ramas de trabajo efímeras. |
+| `dev` | Integración. Default para work-items. |
+| `feature/*`, `refactor/*`, `fix/*`, `chore/*`, `hotfix/*` | Ramas de trabajo efímeras (una por work-item). |
 
-**Flujo estándar:**
-1. Crea branch desde `dev`: `git checkout -b feat/issue-{N}-descripcion`
-2. Commits conventional referenciando issue: `feat(scope): descripción #N`
-3. Abre PR contra `dev`. Body incluye `Closes #N`.
-4. Squash merge → `dev`.
+**Flujo estándar (work-items y tasks):**
+1. Crea un work-item padre con `/plan` (tipo: `feature`, `refactor`, `fix` o `chore`) más sus tasks.
+2. Crea la rama desde `dev`: `git checkout -b <tipo>/<N>-<slug>`
+3. Implementa task por task. Cada task cerrada genera **un commit** referenciando la task y el work-item:
+   ```
+   feat(scope): descripción de la task (#task-N) — feature #parent-N
+   ```
+4. Abre **un solo PR** contra `dev` cuando **todas las tasks** del work-item están cerradas. Body incluye `Closes #parent-N` y los `Closes #task-N` correspondientes.
+5. Squash o merge commit → `dev`.
 
 ### Idioma
 - **Código y comentarios:** según la convención del equipo.
@@ -117,9 +121,9 @@ Todo contexto de proyecto vive en GitHub. Cero contexto local.
 
 | Contexto | Dónde |
 |---|---|
-| Estado de una feature en curso | Issue de GitHub (comments para progreso) |
-| Plan de un epic | Body del issue padre + sub-issues |
-| Progreso de sesión | Comment en el issue activo (vía `/build`) |
+| Estado de un work-item en curso | Issue padre en GitHub (comments para progreso) |
+| Plan de un work-item | Body del issue padre + tasks vinculadas como sub-issues |
+| Progreso de sesión | Comment en el work-item activo (vía `/build`) |
 | Convenciones del repo | `CLAUDE.md` + `.claude/rules/` (commiteados) |
 | Convenciones cross-repo | Este archivo (commiteado en workspace raíz) |
 | Preferencias personales | `CLAUDE.local.md` |
@@ -151,8 +155,13 @@ Soporte:
 3. Antes de cada deploy: `/secure` es obligatorio — no omitir.
 4. Si el plan en GitHub no refleja el código: correr `/sync` antes de continuar.
 5. Si aparece un aprendizaje que debe persistir: commitearlo al `CLAUDE.md` del repo correspondiente.
-6. **Nunca escribir código sin un issue previo.** Si el dev pide implementar algo y no hay issue visible, preguntar si quiere crear el issue primero con `/plan`.
-7. **`/plan` se activa también por texto.** Si el dev dice "quiero planificar", "hagamos un plan para X", "¿qué issues necesitamos?", "¿cómo lo dividimos?", etc. — tratar como invocación de `/plan` aunque no haya escrito el comando.
-8. **Todo trabajo parte desde `dev`.** Las ramas `feat/*` y `fix/*` se crean desde `dev`, nunca directamente en `dev` o `main`.
+6. **Nunca escribir código sin un work-item previo.** Si el dev pide implementar algo y no hay work-item visible, preguntar si quiere crear el plan primero con `/plan`.
+7. **`/plan` se activa también por texto.** Si el dev dice "quiero planificar", "hagamos un plan para X", "¿qué tareas necesitamos?", "¿cómo lo dividimos?", "tengo este bug", etc. — tratar como invocación de `/plan` aunque no haya escrito el comando.
+8. **Todo trabajo parte desde `dev`.** Las ramas `feature/*`, `refactor/*`, `fix/*`, `chore/*` y `hotfix/*` se crean desde `dev`, nunca directamente en `dev` o `main`.
 9. **Cualquier comando `gh` debe usar las credenciales del proyecto, no la sesión global del sistema.** Antes de ejecutar cualquier `gh issue`, `gh pr`, `gh api`, `gh project`, etc. — incluso fuera de una skill, aunque sea en respuesta a una pregunta de chat — siempre hacer primero: `source .claude/scripts/resolve-gh-creds.sh || exit 1`. Nunca asumir que `gh auth status` local es la cuenta correcta para el repo.
-10. **El flujo es conversacional — no depende de que el dev escriba cada slash command.** Cuando el dev confirma un plan, Claude crea los issues, crea la rama y empieza a aplicar sin esperar que el dev escriba `/apply`. Cuando el dev dice "ya apliquemos" o "todo bien, sigamos", Claude interpreta que es hora de implementar y avanza. El dev guía con lenguaje natural; Claude ejecuta el flujo completo (`/plan` → issues → rama → `/apply` → `/build`) de forma autónoma salvo que el dev frene explícitamente.
+10. **El flujo es conversacional — no depende de que el dev escriba cada slash command.** Cuando el dev confirma un plan, Claude crea los issues, crea la rama y empieza a aplicar sin esperar que el dev escriba `/apply`. Cuando el dev dice "ya apliquemos" o "todo bien, sigamos", Claude interpreta y avanza. El dev guía con lenguaje natural; Claude ejecuta el flujo completo (`/plan` → issues → rama → `/apply` → `/build`) salvo que el dev frene explícitamente.
+11. **Toda planificación se agrupa bajo un work-item padre.** No hay tasks huérfanas. Un work-item es un issue padre con label `feature`, `refactor`, `fix` o `chore`. Sus tasks son sub-issues vinculados nativamente con `addSubIssue` de GraphQL. Las subtareas internas van como checkboxes en el body de la task, no como issues separados. Si el work-item resulta demasiado grande, se divide en dos work-items — nunca en sub-sub-tasks.
+12. **El tipo del work-item determina el prefijo de la rama.** `feature` → `feature/<N>-<slug>`, `refactor` → `refactor/<N>-<slug>`, `fix` → `fix/<N>-<slug>`, `chore` → `chore/<N>-<slug>`. Las tasks dentro pueden ser de tipos mixtos (feat, fix, refactor, test, docs) y eso se refleja en cada commit con Conventional Commits.
+13. **Un work-item = una rama = un PR final.** Cada task cerrada se commitea en la misma rama con mensaje `<tipo>(scope): descripción (#task-N) — <tipo-padre> #parent-N`. El PR hacia `dev` se abre **solo cuando todas las tasks están cerradas** y el dev confirma.
+14. **Si aparece trabajo nuevo durante la implementación**: si forma parte de cerrar BIEN el work-item activo → nueva task hija del mismo padre. Si es un problema de algo ya mergeado en producción → nuevo work-item de tipo `fix` (separado).
+15. **Confirmación obligatoria antes de acciones visibles.** Claude pregunta antes de: crear issues, crear la rama, hacer commit, hacer push, abrir el PR. Lo único sin preguntar son acciones reversibles locales (editar archivos, correr tests, leer código).

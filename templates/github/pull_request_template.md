@@ -1,22 +1,31 @@
 ## Descripción
 
-<!-- Explica qué hace este PR y por qué -->
+<!-- Explica qué hace este PR y por qué. Un PR cierra un work-item completo, no una task suelta. -->
 
-## Issue relacionado
+## Work-item
 
 Closes #
+<!-- Número del work-item padre (feature, refactor, fix o chore) que cierra este PR -->
 
-## Tipo de cambio
+## Tasks incluidas
 
-- [ ] feat — nueva funcionalidad
-- [ ] fix — corrección de bug
-- [ ] hotfix — fix urgente en producción
+<!-- Listar todas las tasks que se cerraron como parte del work-item. Cada una corresponde a un commit. -->
+
+- Closes #
+- Closes #
+- Closes #
+
+## Tipo del work-item
+
+- [ ] feature — funcionalidad nueva
 - [ ] refactor — refactoring sin cambio de comportamiento
-- [ ] docs — solo documentación
-- [ ] chore — mantenimiento, dependencias
+- [ ] fix — corrección de bug
+- [ ] chore — mantenimiento, dependencias, CI
 
 ## Checklist
 
+- [ ] Todas las tasks del work-item están cerradas
+- [ ] Cada task generó un commit con Conventional Commits
 - [ ] Tests agregados o actualizados
 - [ ] `CLAUDE.md` actualizado si hay aprendizajes nuevos
 - [ ] Sin secrets en el código

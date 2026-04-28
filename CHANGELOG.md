@@ -8,6 +8,40 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.1.0] — 2026-04-28
+
+Versión centrada en **modelo work-item / task**: reemplaza el concepto de "épica + sub-issues" por un patrón generalizado y alineado con la industria. Cualquier trabajo se planifica como un **work-item padre** (`feature`, `refactor`, `fix` o `chore`) que agrupa **tasks** vinculadas nativamente como sub-issues. Una rama por work-item, un commit por task, **un solo PR al cerrar el work-item**.
+
+### Changed
+
+- **Renombrado: épica → work-item.** Más estándar en la industria (Linear, GitHub, Vercel, Stripe). El work-item puede ser de cuatro tipos: `feature`, `refactor`, `fix`, `chore`. Las tasks (antes "sub-issues") son las piezas concretas dentro.
+- **El tipo del work-item determina el prefijo de la rama:** `feature/<N>-<slug>`, `refactor/<N>-<slug>`, `fix/<N>-<slug>`, `chore/<N>-<slug>`. Las ramas viejas `feat/issue-N-...` ya no se usan.
+- **Conventional Commits con doble referencia:** `<tipo>(<scope>): descripción (#task-N) — <tipo-padre> #parent-N`. El tipo del commit refleja la task, no el work-item padre. Permite mezclar tipos dentro de un mismo work-item (ej: una feature puede tener tasks de tipo `feat`, `refactor`, `test`, `docs`).
+- **Un solo PR por work-item, abierto solo cuando todas las tasks están cerradas.** No hay PR por task. El PR cierra el work-item padre y todas sus tasks (`Closes #parent-N`, `Closes #task-1`, ...).
+- **`/plan` reescrito completamente:** propone work-item + tasks, pide confirmación antes de crear nada, vincula tasks al padre vía `addSubIssue` GraphQL, agrega todo al GitHub Project, ofrece arrancar la rama del work-item al final.
+- **`/apply` trabaja sobre la rama del work-item:** identifica el work-item activo y la task en `in-progress`, lee plan de la task + contexto del padre, valida que la rama actual sea `<tipo>/<N>-<slug>`. Una task a la vez.
+- **`/build` con confirmación obligatoria** antes de cada commit, push y apertura de PR. Cada task cerrada genera un commit. El PR del work-item se ofrece solo cuando todas las tasks están cerradas.
+- **`/init` muestra work-items y tasks agrupadas:** presenta los work-items en progreso con sus tasks anidadas, los work-items asignados sin empezar, y pregunta explícitamente al dev qué quiere hacer.
+- **`templates/CLAUDE.md.hbs`**: reglas operativas 11-15 documentan el modelo work-item completo (work-item padre, tasks vinculadas nativamente, prefijo de rama según tipo, PR único, confirmación obligatoria, manejo de trabajo descubierto durante la implementación).
+- **`templates/rules/branching.md`** y **`templates/rules/commits.md`**: actualizados para reflejar el nuevo patrón con ejemplos concretos.
+
+### Added
+
+- **Templates de issue por tipo de work-item:**
+  - `templates/github/ISSUE_TEMPLATE/feature.md` — work-item de tipo feature
+  - `templates/github/ISSUE_TEMPLATE/refactor.md` — work-item de tipo refactor (nuevo)
+  - `templates/github/ISSUE_TEMPLATE/chore.md` — work-item de tipo chore (nuevo)
+  - `templates/github/ISSUE_TEMPLATE/bug.md` — work-item de tipo fix (renombrado en propósito)
+  - `templates/github/ISSUE_TEMPLATE/task.md` — task hija de cualquier work-item (nuevo)
+- **Soporte para descubrir trabajo durante el desarrollo:** si aparece algo nuevo mientras trabajas, `/apply` y `/plan` documentan cuándo crear una nueva task hija del mismo padre vs cuándo abrir un nuevo work-item separado de tipo `fix` (el criterio: "¿es para cerrar bien lo que estoy haciendo, o es un problema de algo ya en producción?").
+- **`pull_request_template.md`** estructura el PR alrededor del work-item: lista las tasks cerradas, marca el tipo del work-item, checklist específico (todas las tasks cerradas, cada task con commit propio).
+
+### Removed
+
+- **`templates/github/ISSUE_TEMPLATE/epic.md`** eliminado. Reemplazado por `feature.md` (con la terminología nueva) y los nuevos templates `refactor.md` y `chore.md`. Si un proyecto venía con `epic.md` instalado, `/update` lo detecta como obsoleto y ofrece eliminarlo.
+
+---
+
 ## [1.0.9] — 2026-04-27
 
 Versión centrada en **flujo conversacional y autonomía de Claude**: el dev ya no necesita escribir cada slash command — Claude interpreta la intención, propone el plan, pide confirmación y ejecuta el flujo completo. Además se corrige que los commits del setup iban a `main` en lugar de `dev`.
@@ -326,7 +360,8 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.0.9...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Dev3ch/workspace_template/compare/v1.0.9...v1.1.0
 [1.0.9]: https://github.com/Dev3ch/workspace_template/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/Dev3ch/workspace_template/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/Dev3ch/workspace_template/compare/v1.0.6...v1.0.7
