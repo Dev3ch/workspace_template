@@ -13,16 +13,23 @@ Al inicio de cada sesión de trabajo, antes de empezar cualquier tarea.
 
 ## Pasos
 
-### 0. Resolver credenciales de GitHub
+### 0. Resolver credenciales de GitHub (fail-fast)
+
+**Una sola llamada, sin improvisar.** Cada Bash call de cualquier skill empieza con:
 
 ```bash
-source .claude/scripts/resolve-gh-creds.sh || exit 1
+source .claude/scripts/gh-isolated.sh || exit 1
 ```
 
-El script detecta automáticamente la cuenta con acceso al repo (revisa remote
-con creds embebidas, .claude-credentials, keychain del SO, y sesión de `gh`).
-Valida el token contra el repo antes de cachear. Si nada funciona, muestra
-instrucciones claras.
+Esto:
+- Carga `.claude-credentials` (prioridad máxima sobre el keyring del SO).
+- Aísla `gh` con `GH_CONFIG_DIR` efímero, así `gh` ignora cualquier sesión del keyring que tenga otra cuenta.
+- Valida el token contra el repo con UN solo `curl`. Si falla → para de inmediato.
+- Exporta `GH_TOKEN`, `GITHUB_USER`, `GH_REPO`, `REPO_OWNER`, `REPO_NAME`.
+
+**Regla dura:** si `gh-isolated.sh` falla, **no intentar arreglar credenciales de mil formas distintas**. Reportar el error al dev tal cual y parar. Las instrucciones para arreglarlo están en el output del propio script. No probar `gh auth switch`, ni `mktemp` configs paralelos, ni `gh auth login --with-token`. El dev arregla `.claude-credentials` y vuelve a correr.
+
+**Recordatorio importante:** cada Bash call es un proceso nuevo y las exports se pierden. **Toda Bash call de una skill debe empezar con `source .claude/scripts/gh-isolated.sh`** (es idempotente y reusa el `GH_CONFIG_DIR` de la sesión, así que no es caro).
 
 ### 0.5 Posicionarse en `dev` (obligatorio por sesión)
 
@@ -30,31 +37,73 @@ instrucciones claras.
 — es la base de trabajo compartida entre features, y las skills siguientes (`/plan`,
 `/apply`, `/build`) asumen que estás ahí.
 
-Single-repo:
-```bash
-git fetch origin --prune
+**ANTES de cualquier checkout: chequear el estado de la rama actual.** No moverse
+ciegamente. La regla es:
 
-if git ls-remote --heads origin dev | grep -q dev; then
-  git checkout dev 2>/dev/null || git checkout -b dev origin/dev
-  git pull --ff-only origin dev
-else
-  echo "⚠  No existe rama dev en remote."
-  echo "   Correr /branches para crearla antes de continuar."
-  exit 1
-fi
-```
+1. **Detectar rama actual y cambios pendientes** (single-repo o por cada repo en multi-repo):
 
-Multi-repo: aplicar el mismo checkout a **cada repo** listado en el `CLAUDE.md` del
-workspace. No dejar ningún repo en `main` o `master` al iniciar la sesión.
+   ```bash
+   CURRENT_BRANCH=$(git branch --show-current)
+   DIRTY=$(git status --porcelain)              # vacío = working tree limpio
+   UNPUSHED=$(git log --oneline @{u}..HEAD 2>/dev/null || echo "")  # commits locales sin push
+   ```
 
-```bash
-# Ejemplo (iterar sobre los repos del workspace):
-for repo in repos/*/; do
-  (cd "$repo" && git fetch origin --prune && \
-   git checkout dev 2>/dev/null || git checkout -b dev origin/dev && \
-   git pull --ff-only origin dev)
-done
-```
+2. **Decidir según los tres casos posibles:**
+
+   **Caso A — Ya estás en `dev`:** simplemente `git pull --ff-only origin dev`. No hay decisión que tomar.
+
+   **Caso B — Estás en otra rama, working tree limpio y sin commits locales sin push:**
+   moverte a `dev` directo. No hay riesgo de perder trabajo.
+
+   ```bash
+   git fetch origin --prune
+   git checkout dev 2>/dev/null || git checkout -b dev origin/dev
+   git pull --ff-only origin dev
+   ```
+
+   **Caso C — Estás en otra rama y hay cambios pendientes** (working tree sucio
+   **o** commits locales sin push). **NO moverse.** Avisar al dev y pedir decisión:
+
+   ```
+   ⚠  Estás en `feature/12-pagos` y tienes trabajo sin guardar:
+
+      Cambios sin commitear:
+        M apps/payments/views.py
+        A tests/payments/test_webhook.py
+
+      Commits locales sin push:
+        a1b2c3d feat(payments): webhook handler
+        e4f5g6h test(payments): casos de error
+
+   Para arrancar la sesión en `dev` sin perder tu trabajo, una de estas:
+
+     1. Commitear/pushear lo pendiente en `feature/12-pagos` y luego ir a `dev`
+        (recomendado si son cambios coherentes)
+     2. Hacer `git stash` y luego ir a `dev` (recomendado si son cambios sueltos)
+     3. Quedarse en `feature/12-pagos` para esta sesión (saltarse el reset a `dev`)
+
+   ¿Qué prefieres? [1/2/3]
+   ```
+
+   - Si elige 1 → guiar `/build` (commit + push) y luego retomar checkout a `dev`.
+   - Si elige 2 → `git stash push -u -m "init-stash-$(date +%s)"`, luego checkout a `dev`. Recordar al dev que su trabajo quedó en stash.
+   - Si elige 3 → quedarse, marcar la sesión como "trabajando fuera de dev", y NO ejecutar el resto del paso 0.5 ni el 1.5. Continuar al paso 1.
+
+   **Nunca usar `git checkout -f`, `git reset --hard`, ni `git stash drop` para "destrabar" el cambio de rama.** Es trabajo del dev, no nuestro.
+
+3. **Multi-repo:** aplicar la misma lógica a **cada repo** listado en el `CLAUDE.md` del
+   workspace. Si cualquier repo cae en el Caso C, pausar para ese repo y resolver antes
+   de seguir con los demás. No dejar ningún repo en `main` o `master` al iniciar la sesión
+   (excepto si el dev eligió la opción 3 explícitamente).
+
+   ```bash
+   # Ejemplo (iterar sobre los repos del workspace):
+   for repo in repos/*/; do
+     # Para cada repo, repetir el chequeo de los 3 casos.
+     # NO usar un one-liner que asuma working tree limpio.
+     :
+   done
+   ```
 
 **Excepción mid-chat:** si el dev pide explícitamente trabajar en `main` (ej. hotfix,
 pentest, revisión de prod), confirmar una sola vez:
@@ -111,42 +160,75 @@ Si el dev confirma:
 
 Marcar la sesión con `_DRIFT_LAST_CHECK_AT=$(date +%s)` para que las skills posteriores no rechecheen innecesariamente en los próximos 10 minutos.
 
-### 2. Revisar work-items y tasks activas
+### 1.7 Limpiar inconsistencias de estado en GitHub (rápido)
 
-Los work-items son los issues padre con label `feature`, `refactor`, `fix` o `chore`. Las tasks son sus sub-issues.
+Sanear estados zombies en una sola query, sin recorrer todo el backlog:
 
 ```bash
-# Work-items en progreso asignados a mí
-gh issue list --assignee @me --state open --label "in-progress" \
-  --json number,title,labels,url \
-  --jq '[.[] | select(.labels[] | .name | IN("feature","refactor","fix","chore"))]'
+source .claude/scripts/gh-isolated.sh || exit 1
 
-# Work-items asignados sin label "in-progress" (planificados pero no arrancados)
-gh issue list --assignee @me --state open \
-  --json number,title,labels,url \
-  --jq '[.[] | select((.labels[].name) | IN("feature","refactor","fix","chore"))
-              | select(([.labels[].name] | index("in-progress")) | not)]'
+# Work-items cerrados con label intermedio (in-progress o review) — debería ser raro.
+gh issue list --repo "$GH_REPO" --state closed --label "in-progress" \
+  --json number --jq '.[].number' | while read -r N; do
+  gh issue edit "$N" --repo "$GH_REPO" --remove-label "in-progress" --remove-label "review"
+done
 ```
 
-Para cada work-item en progreso, listar sus tasks abiertas:
+No buscar más allá de esto. Si más adelante una skill detecta otra inconsistencia puntual, la arregla en el momento; no es trabajo de `/init` recorrer todo el backlog cada vez.
+
+### 2. Revisar work-items pendientes (server-side filter, una sola query)
+
+**Regla de oro:** nunca traer todos los issues del repo y filtrar localmente. Aunque haya 5000, traemos solo los que importan ahora — los que están **asignados a mí** y **en estado de trabajo activo o pendiente** (no los cerrados, no los del backlog ajeno). Esto se hace **server-side** con la search API (un solo round-trip):
 
 ```bash
-gh api graphql -f query='
-query($owner: String!, $repo: String!, $number: Int!) {
-  repository(owner: $owner, name: $repo) {
-    issue(number: $number) {
-      subIssues(first: 50) {
-        nodes { number title state labels(first:10){ nodes{ name } } }
+source .claude/scripts/gh-isolated.sh || exit 1
+
+# Una sola query: issues abiertos asignados a mí, con label de work-item.
+# Filtramos labels y assignee del lado server. Limitamos page-size; rara vez
+# un dev tiene >50 work-items abiertos simultáneos.
+gh api -X GET search/issues \
+  -f q="repo:$GH_REPO is:issue is:open assignee:$GITHUB_USER label:feature,refactor,fix,chore" \
+  -F per_page=50 \
+  --jq '[.items[] | {
+    number, title, url: .html_url,
+    labels: [.labels[].name],
+    in_progress: ([.labels[].name] | index("in-progress") != null)
+  }]'
+```
+
+Partir el resultado en dos grupos en una sola pasada local:
+- `in_progress: true` → "Work-items en progreso".
+- `in_progress: false` → "Work-items asignados sin empezar".
+
+**Si el resultado es vacío** → mensaje corto: "No hay work-items asignados. ¿Planificar uno nuevo? → `/plan`". No hacer queries adicionales.
+
+**Tasks (sub-issues): solo las de los work-items en progreso.** No de los planeados ni de los cerrados — eso gasta tokens y no aporta nada al arranque:
+
+```bash
+# Por cada work-item en progreso (debería ser 1-3 normalmente, no decenas):
+for PARENT_N in <lista-de-in_progress>; do
+  gh api graphql -f query='
+  query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      issue(number: $number) {
+        subIssues(first: 50) {
+          nodes { number title state labels(first:10){ nodes{ name } } }
+        }
       }
     }
-  }
-}' -f owner="<owner>" -f repo="<repo>" -F number=<PARENT_N>
+  }' -f owner="$REPO_OWNER" -f repo="$REPO_NAME" -F number="$PARENT_N" \
+    --jq '[.data.repository.issue.subIssues.nodes[] | select(.state == "OPEN")]'
+done
 ```
 
-### 3. Revisar PRs abiertos
+**Solo se cargan las tasks `OPEN`.** Las cerradas no se leen — su trabajo ya está commiteado y citarlas por número alcanza.
+
+### 3. Revisar PRs abiertos míos (una query)
 
 ```bash
-gh pr list --author @me --state open --json number,title,url,isDraft
+source .claude/scripts/gh-isolated.sh || exit 1
+gh pr list --repo "$GH_REPO" --author "$GITHUB_USER" --state open \
+  --json number,title,url,isDraft,headRefName
 ```
 
 ### 4. Si se pasa un número de issue

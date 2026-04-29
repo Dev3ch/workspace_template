@@ -119,8 +119,10 @@ Incluir el flujo estándar completo:
 .github/
 ├── ISSUE_TEMPLATE/
 │   ├── feature.md
+│   ├── refactor.md
 │   ├── bug.md
-│   └── epic.md
+│   ├── chore.md
+│   └── task.md
 └── pull_request_template.md
 ```
 

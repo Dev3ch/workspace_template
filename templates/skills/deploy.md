@@ -10,7 +10,7 @@ Prepara el proyecto para deployment: genera Dockerfile, GitHub Actions de CI/CD 
 ## Credenciales de GitHub
 
 ```bash
-source .claude/scripts/resolve-gh-creds.sh || exit 1
+source .claude/scripts/gh-isolated.sh || exit 1
 ```
 
 Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.

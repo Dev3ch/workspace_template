@@ -10,7 +10,7 @@ Guarda el progreso de la sesión en GitHub. Hace commit por task cerrada y push 
 ## Credenciales de GitHub
 
 ```bash
-source .claude/scripts/resolve-gh-creds.sh || exit 1
+source .claude/scripts/gh-isolated.sh || exit 1
 ```
 
 Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
@@ -28,9 +28,14 @@ git status
 git diff --stat
 ```
 
-### 2. Confirmar commit con el dev
+### 2. Confirmar commit con el dev (SIEMPRE, sin excepciones)
 
-**Nunca commitear sin preguntar.** Mostrar al dev el resumen de cambios y preguntar:
+**Nunca commitear sin preguntar.** Esto aplica a **cada** commit, sin excepciones:
+- Aunque sea el segundo, tercero o décimo commit de la sesión: preguntar.
+- Aunque la sesión anterior haya autorizado commits: preguntar de nuevo.
+- Aunque el dev haya dicho "vamos rápido": preguntar.
+
+La autorización es por commit, no por sesión. Mostrar al dev el resumen de cambios y preguntar:
 
 ```
 Cambios listos para commit:
@@ -58,7 +63,7 @@ git commit -m "<tipo>(<scope>): descripción de la task (#<TASK_N>) — <tipo-pa
 - `<scope>` = módulo afectado (ej: `payments`, `auth`, `api`).
 - `<tipo-padre>` = tipo del work-item (`feature`, `refactor`, `fix`, `chore`).
 
-**Un commit = una task cerrada.** Si en una sesión cerraron dos tasks, son dos commits separados.
+**Un commit = una task cerrada.** Si en una sesión cerraron dos tasks, son dos commits separados, cada uno con su confirmación.
 
 ### 3. Confirmar push con el dev
 
@@ -124,6 +129,8 @@ query($owner: String!, $repo: String!, $number: Int!) {
 - Pasar al paso 6.
 
 ### 6. Cerrar el work-item y abrir el PR (con confirmación)
+
+**Regla dura: el PR se abre solo cuando TODAS las tasks del work-item están cerradas.** No abrir PRs "preliminares" o "para revisar progreso" — eso confunde al reviewer y deja el board en estado ambiguo. Si el dev quiere parar a la mitad, ver `/apply` paso 9.1 (mover lo no hecho a un work-item de fase 2 y cerrar este con lo cubierto).
 
 **Antes de abrir el PR: chequeo crítico de drift contra dev.**
 
@@ -211,6 +218,61 @@ gh issue comment $PARENT_N --body "$(cat <<EOF
 EOF
 )"
 ```
+
+### 8. Tras el merge del PR: cierre automático del work-item y limpieza
+
+Cuando el PR se mergea (en GitHub, después de la review), **es responsabilidad de `/build` dejar el board limpio en automático, sin pedir confirmaciones extra**. No decir "voy a cerrar manualmente" ni dejar issues en `in-progress` si el work-item quedó completo.
+
+Detectar si el PR del work-item ya fue mergeado:
+
+```bash
+PR_STATE=$(gh pr view "$PR_NUMBER" --json state,merged --jq '.state + ":" + (.merged|tostring)')
+# "MERGED:true" → mergeado
+# "OPEN:false"  → todavía abierto
+# "CLOSED:false" → cerrado sin merge
+```
+
+Si está mergeado:
+
+```bash
+# 1. Cerrar el work-item padre (los `Closes #N` del PR ya cierran las tasks; aquí cerramos el padre)
+gh issue close "$PARENT_N" --comment "Mergeado en PR #$PR_NUMBER"
+
+# 2. Quitar labels de estado intermedio del padre
+gh issue edit "$PARENT_N" --remove-label "in-progress" --remove-label "review"
+
+# 3. Verificar que NINGUNA task quede abierta o con label in-progress
+OPEN_TASKS=$(gh api graphql -f query='
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      subIssues(first: 50) { nodes { number state labels(first:10){ nodes{ name } } } }
+    }
+  }
+}' -f owner="<owner>" -f repo="<repo>" -F number="$PARENT_N" \
+  --jq '[.data.repository.issue.subIssues.nodes[] | select(.state == "OPEN")]')
+
+if [ "$(echo "$OPEN_TASKS" | jq 'length')" -gt 0 ]; then
+  # Si el PR mergeó pero quedan tasks abiertas, algo se salió del flujo:
+  # cerrarlas referenciando el PR y avisar al dev.
+  echo "$OPEN_TASKS" | jq -r '.[] | .number' | while read -r N; do
+    gh issue close "$N" --comment "Cerrado al mergear PR #$PR_NUMBER (work-item #$PARENT_N)"
+    gh issue edit "$N" --remove-label "in-progress"
+  done
+fi
+
+# 4. Limpiar la rama del work-item (con confirmación — borrar ramas SÍ se confirma)
+git checkout dev && git pull --ff-only origin dev
+echo "¿Borrar la rama local y remota '$WORK_BRANCH'? [S/n]"
+# Si confirma:
+#   git branch -d "$WORK_BRANCH"
+#   git push origin --delete "$WORK_BRANCH"
+```
+
+**Reglas:**
+- Cierre del work-item padre y de tasks colgantes: **automático, sin preguntar.** El merge ya fue la decisión.
+- Borrado de rama local/remota: **sí se pregunta** — destructivo y no revertible sin trabajo.
+- **Nada queda en `in-progress` si el work-item ya está cerrado.** Si Claude detecta esa inconsistencia en una próxima `/init`, debe limpiar.
 
 ## Siguiente paso
 

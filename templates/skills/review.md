@@ -10,7 +10,7 @@ Revisa código con perspectiva fresca. Ideal para revisar PRs o validar implemen
 ## Credenciales de GitHub
 
 ```bash
-source .claude/scripts/resolve-gh-creds.sh || exit 1
+source .claude/scripts/gh-isolated.sh || exit 1
 ```
 
 Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
@@ -86,10 +86,14 @@ Si todo está bien: aprobar con un resumen de lo revisado.
 
 ## Siguiente paso
 
-- **Todo verde, listo para mergear a dev** → merge → `/init` en próxima sesión
+- **Todo verde, listo para mergear a dev** → merge → `/build` paso 8 (cierre automático del work-item + tasks pendientes + limpieza de rama)
 - **Bloqueantes detectados** → `/apply` (o `/debug`) para corregirlos → volver a `/review`
 - **Cambio toca autenticación, pagos o datos sensibles** → `/audit` antes del merge
 - **Rama va directo a main** → `/secure` + `/deploy` tras el merge
+
+## Tras el merge
+
+Una vez mergeado el PR, **no dejar issues en `in-progress` ni el work-item abierto**. El cierre es automático (ver `/build` paso 8): cerrar el work-item padre, cerrar cualquier task colgante referenciando el PR, quitar labels intermedios, y ofrecer borrar la rama. Nunca decirle al dev "voy a cerrar los issues manualmente" — es trabajo del flujo.
 
 ## Notas
 

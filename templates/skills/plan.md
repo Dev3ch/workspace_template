@@ -43,7 +43,7 @@ PR:   uno solo, al cerrar el work-item, hacia dev
 ### 0. Resolver credenciales de GitHub
 
 ```bash
-source .claude/scripts/resolve-gh-creds.sh || exit 1
+source .claude/scripts/gh-isolated.sh || exit 1
 ```
 
 ### 1. Entender el scope y elegir tipo

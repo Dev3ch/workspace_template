@@ -10,7 +10,7 @@ Revisión de seguridad profunda de los cambios pendientes: OWASP Top 10, auth, a
 ## Credenciales de GitHub
 
 ```bash
-source .claude/scripts/resolve-gh-creds.sh || exit 1
+source .claude/scripts/gh-isolated.sh || exit 1
 ```
 
 Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.

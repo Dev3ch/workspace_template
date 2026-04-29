@@ -8,6 +8,42 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.1.2] — 2026-04-28
+
+Versión centrada en **arranque rápido y predecible**: `/init` deja de "improvisar" cuando hay problemas de credenciales o cuando el repo tiene miles de issues. El cambio de rama es seguro (nunca pisa trabajo del dev), el updater respeta tus borrados locales, los commits siempre se confirman, y al mergear un PR todo el work-item queda limpio en automático.
+
+### Added
+
+- **`templates/scripts/gh-isolated.sh`** — wrapper que carga `.claude-credentials` y aísla `gh` con un `GH_CONFIG_DIR` efímero por sesión, ignorando el keyring del SO. Si el token no valida contra el repo, hace **fail-fast** con un solo `curl` y mensaje accionable. Resuelve el caso "el keyring tiene otra cuenta y `gh` la prefiere sobre `$GH_TOKEN`".
+- **Regla anti-improvisación en `/init`** — si `gh-isolated.sh` falla, **no** se intentan `gh auth switch`, configs paralelos con `mktemp`, ni `gh auth login --with-token`. Se reporta el error y se para. El dev arregla `.claude-credentials` y vuelve a correr.
+- **Limpieza automática de estados zombies en `/init`** (paso 1.7) — work-items cerrados con label `in-progress`/`review` se sanean en una sola query.
+- **`/apply` paso 9.1: pausar work-item a la mitad** — si el dev necesita parar y trabajar otra cosa, se documenta el procedimiento (commit/stash de lo hecho, las tasks pendientes quedan abiertas, el nuevo trabajo arranca desde `dev` en su propia rama). Nunca se abre un PR con work-item a medias; lo no hecho se mueve a un work-item de fase 2.
+- **`/build` paso 8: cierre automático tras el merge** — al detectar que el PR fue mergeado, el work-item padre se cierra, las tasks colgantes se cierran referenciando el PR, los labels intermedios se quitan, y se ofrece borrar la rama (esto sí se confirma). **Nada queda `in-progress` si el work-item está completo.**
+- **Categoría `deletedByUser` en el updater** — si un archivo del template estaba en el registry pero el dev lo borró localmente, ya no se reinstala automáticamente. Aparece en la lista marcado con `×` y default unchecked; reaparece solo si el dev lo selecciona explícitamente.
+
+### Changed
+
+- **`/init` paso 0.5 reescrito: cambio de rama con tres casos explícitos.** Antes hacía `git checkout dev` ciegamente. Ahora detecta:
+  - Caso A — ya estás en `dev` → solo `pull`.
+  - Caso B — otra rama, working tree limpio, sin commits sin push → mover sin riesgo.
+  - Caso C — hay cambios pendientes (working tree sucio o commits locales sin push) → **NO mover.** Se ofrecen tres opciones: commit/push y luego ir a `dev`, `git stash` y luego ir a `dev`, o quedarse en la rama actual para esta sesión. Nunca se usa `checkout -f` ni `reset --hard`.
+- **`/init` paso 2: query server-side para issues pendientes.** Antes traía todos los issues asignados y filtraba localmente. Ahora usa `search/issues` con el filtro `repo:$GH_REPO is:issue is:open assignee:$GITHUB_USER label:feature,refactor,fix,chore` — un solo round-trip, `per_page=50`. Aunque el repo tenga miles de issues, solo viajan los relevantes para el dev en este momento.
+- **Tasks (sub-issues) solo se cargan para work-items en progreso, y solo las `OPEN`.** Las cerradas se citan por número pero no se leen — su trabajo ya está commiteado y leerlas solo gasta tokens.
+- **`/build` paso 2: confirmación obligatoria por cada commit, sin excepciones.** La autorización es por commit, no por sesión. Aunque sea el décimo commit del día, se pregunta.
+- **`/build` paso 6: regla dura "PR solo con todo culminado".** No se abren PRs preliminares ni de progreso. Si el dev quiere parar a la mitad, ver `/apply` 9.1.
+- **`/apply` lectura mínima de issues** — body del work-item padre + tasks **abiertas** únicamente. Las cerradas no se cargan.
+- **Las 14 skills (`init`, `apply`, `build`, `plan`, `sync`, `review`, `triage`, `branches`, `debug`, `rollback`, `audit`, `pentest`, `secure`, `deploy`)** ahora hacen `source .claude/scripts/gh-isolated.sh` al inicio de cada Bash call. Es idempotente (reusa el `GH_CONFIG_DIR` de la sesión) y elimina el problema de "cada call es un proceso nuevo y `$GH_TOKEN` se pierde".
+
+### Removed
+
+- **Referencias a "epic" en templates y skills.** El concepto fue reemplazado por work-item en `1.1.0`, pero quedaban menciones residuales en `triage.md` ("epic audit", "epic completed"), `setup.md` (árbol `.github/` con `epic.md`) y `CLAUDE.single.md.hbs` ("Plan de un epic"). Todas reescritas en términos de work-item / tasks.
+
+### Fixed
+
+- **`/init` ya no demora ni "da vueltas" con repos privados cuando el keyring tiene otra cuenta.** Antes, en un repo donde el keyring tenía un usuario sin acceso, `/init` hacía 8+ llamadas creativas (`gh auth switch`, `mktemp` con `GH_CONFIG_DIR`, `gh auth login --with-token` que pedía login interactivo) hasta encontrar la combinación que funcionaba. Ahora el wrapper resuelve esto en una sola pasada al inicio.
+
+---
+
 ## [1.1.1] — 2026-04-28
 
 Versión centrada en **drift detection**: cuando varios devs trabajan en paralelo, las ramas de work-items se quedan atrás de `dev` mientras otros van mergeando. Claude ahora chequea drift en puntos naturales del flujo y ofrece sincronizar (rebase / merge) con confirmación, sin nunca hacerlo solo. También se ajusta la pregunta de stack para repos sin manifest detectable.

@@ -10,7 +10,7 @@ Ejecuta la task activa: lee su plan, implementa el código, corre los tests y re
 ## Credenciales de GitHub
 
 ```bash
-source .claude/scripts/resolve-gh-creds.sh || exit 1
+source .claude/scripts/gh-isolated.sh || exit 1
 ```
 
 Detecta la cuenta con acceso al repo y exporta `GH_TOKEN` y `GITHUB_USER`.
@@ -23,13 +23,15 @@ Después de `/plan`, cuando hay un work-item con tasks listas para implementar. 
 
 `/apply` puede consumir muchos tokens si lee archivos innecesarios. Seguir este orden de carga **bajo demanda**:
 
-1. **Primero solo leer:** body de la task + body del work-item padre + `CLAUDE.md` (~3-6k tokens)
+1. **Primero solo leer:** body del work-item padre + body de las **tasks abiertas únicamente** + `CLAUDE.md` (~3-6k tokens). **NO leer las tasks ya cerradas** — su trabajo ya está en el código y en el commit. Leerlas solo gasta tokens.
 2. **Si la task menciona archivos específicos:** leer solo esos archivos
 3. **Si hace falta más contexto:** usar `grep` para buscar símbolos específicos, NO leer directorios completos
 4. **Evitar:** `Read` de archivos sin tocar, `ls -R` de proyectos grandes, leer `node_modules`, `vendor`, `dist`
 5. **Si el repo es desconocido:** pedir al dev que señale los archivos clave en lugar de explorar
 
-Regla: **antes de cada Read, preguntarse ¿este archivo es necesario para el cambio específico que voy a hacer?**
+Reglas:
+- **Antes de cada Read, preguntarse:** ¿este archivo es necesario para el cambio específico que voy a hacer?
+- **Tasks cerradas = no leer.** Si el work-item tiene 10 tasks y 3 están cerradas, solo cargo el body del padre + las 7 abiertas. El historial de las cerradas vive en `git log`, no en mi contexto.
 
 ## Pasos
 
@@ -42,7 +44,7 @@ gh issue list --assignee @me --state open --label "in-progress" \
   --jq '.[] | select(.labels[] | .name | IN("feature","refactor","fix","chore"))'
 ```
 
-Guardar el número como `PARENT_N` y su tipo (`feature`, `refactor`, `fix`, `chore`) como `PARENT_TYPE`. Listar las tasks abiertas:
+Guardar el número como `PARENT_N` y su tipo (`feature`, `refactor`, `fix`, `chore`) como `PARENT_TYPE`. Listar **solo las tasks abiertas** (las cerradas no se leen):
 
 ```bash
 gh api graphql -f query='
@@ -54,10 +56,13 @@ query($owner: String!, $repo: String!, $number: Int!) {
       }
     }
   }
-}' -f owner="<owner>" -f repo="<repo>" -F number=$PARENT_N
+}' -f owner="<owner>" -f repo="<repo>" -F number=$PARENT_N \
+  --jq '[.data.repository.issue.subIssues.nodes[] | select(.state == "OPEN")]'
 ```
 
-La task activa es la primera `state: OPEN` con label `in-progress`. Si ninguna tiene ese label, tomar la primera abierta en orden.
+La task activa es la primera abierta con label `in-progress`. Si ninguna tiene ese label, tomar la primera abierta en orden.
+
+**Cargar el body** únicamente del work-item padre y de las tasks abiertas. Las tasks cerradas se citan por número (referencia) pero no se leen — su trabajo ya está commiteado.
 
 Si no hay work-item en progreso → preguntar al dev qué work-item trabajar, o invocar `/plan`.
 
@@ -213,6 +218,23 @@ Si durante el trabajo aparece algo que NO estaba planeado (bug en una task ya ce
 
 - **Si forma parte de cerrar BIEN el work-item** → crear una nueva task hija del mismo work-item padre (ver sección "Agregar tasks durante el desarrollo" en `/plan`).
 - **Si es un problema de algo ya mergeado en producción** → es un nuevo work-item de tipo `fix`, no parte de este. Comunicárselo al dev.
+
+### 9.1 Si el dev necesita pausar el work-item para hacer otra cosa
+
+Caso típico: vas por la task 5 de 10, ya commiteaste 4, y el dev pide trabajar en otra cosa urgente. **No sobreescribir la rama actual con el nuevo trabajo.** El nuevo trabajo va en otra rama, **siempre desde `dev`**.
+
+Pasos:
+
+1. **Asegurar que lo que ya está hecho quede guardado:** llamar a `/build` para commitear y pushear las tasks cerradas hasta el momento. Si hay cambios sin terminar (la task 5 a medio hacer), confirmar con el dev:
+   - ¿Commitear como WIP en la rama actual y retomar luego? (recomendado si el cambio compila)
+   - ¿Stash con nombre descriptivo? (`git stash push -u -m "wip: <task>"`)
+   - ¿Descartar? (solo si el dev lo pide explícitamente)
+
+2. **Las tasks cerradas se quedan cerradas.** Las abiertas del work-item siguen abiertas para retomar después; no hay que tocarlas. El work-item sigue `in-progress` hasta que se complete.
+
+3. **El nuevo trabajo NO se mete en esta rama.** Volver a `dev` (`git checkout dev && git pull --ff-only`) y arrancar el nuevo work-item desde ahí, en su propia rama `<tipo>/<N>-<slug>`.
+
+4. **Nunca abrir el PR con el work-item a medias.** El PR se abre cuando todas las tasks del work-item están cerradas (ver `/build`). Si el dev presiona por hacer el PR ahora con lo que hay, recomendar mover las tasks pendientes a un work-item de seguimiento (`<tipo>: <título original> — fase 2`) y dejar este work-item con solo lo cubierto.
 
 ### 10. Preparar para /build
 

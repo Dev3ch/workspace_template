@@ -33,9 +33,28 @@ npx workspace-template
 
 El CLI te guía paso a paso (en español).
 
-## Flujo de comandos
+## Cómo funciona — en 30 segundos
 
-Una vez configurado, en cualquier sesión de Claude Code tienes los siguientes comandos. **El flujo es conversacional** — no necesitas escribirlos manualmente. Si dices "planifiquemos esto" o "ya apliquemos", Claude lo interpreta y avanza solo.
+Hay tres niveles de uso. Empieza por el básico.
+
+### Flujo básico (el 80% del tiempo)
+
+```
+/init  →  /plan  →  /apply  →  /build  →  (review en GitHub)  →  merge
+```
+
+- **`/init`** — arranca la sesión. Te pone en `dev`, lista tus work-items pendientes y te pregunta qué quieres hacer.
+- **`/plan`** — propone un work-item (feature / refactor / fix / chore) con sus tasks. **Pide confirmación** antes de crear nada en GitHub.
+- **`/apply`** — implementa la task activa, corre tests.
+- **`/build`** — commit + push (con tu confirmación) por cada task. Cuando todas las tasks del work-item están cerradas, abre **un solo PR** hacia `dev`.
+
+Tras el merge, `/build` cierra el work-item, sus tasks colgantes y limpia la rama — todo automático. Para la siguiente sesión arrancas con `/init` de nuevo.
+
+**Conversacional:** no necesitas escribir los slash commands literalmente. Si dices "planifiquemos un sistema de notificaciones" o "vamos a aplicar la siguiente task", Claude interpreta y avanza solo.
+
+### Flujo completo (con soporte y producción)
+
+Una vez configurado, en cualquier sesión de Claude Code tienes los siguientes comandos. La parte central es el flujo básico de arriba; el resto entra cuando hay algo extra: tests fallan, hay drift contra `dev`, vas a producción, o necesitas auditar seguridad.
 
 ```mermaid
 flowchart TD
@@ -137,9 +156,22 @@ flowchart LR
 2. **Una rama por work-item**, prefijo según su tipo (`feature/N-...`, `refactor/N-...`, `fix/N-...`, `chore/N-...`).
 3. **Una task = un commit** (Conventional Commits con doble referencia).
 4. **Un work-item = un PR único** al cerrar todas sus tasks.
-5. **Confirmación obligatoria** antes de commit, push y apertura de PR.
+5. **Confirmación obligatoria** antes de commit, push y apertura de PR — cada vez, sin excepciones.
 6. **Drift detection automático** en `/init`, `/apply`, `/build` — Claude avisa si tu rama está atrás de `dev` y ofrece sincronizar.
 7. **Conversacional** — Claude interpreta intención y avanza solo, sin que escribas cada slash command.
+8. **Cambio de rama seguro en `/init`** — si tienes cambios sin commitear o commits sin push, Claude **no se mueve**: te ofrece commit, stash o quedarte en la rama. Nunca usa `checkout -f` ni `reset --hard`.
+9. **Cierre automático post-merge** — al mergear el PR, `/build` cierra el work-item, sus tasks colgantes y ofrece borrar la rama. Nada queda `in-progress` si el work-item ya está completo.
+10. **Lectura mínima de issues** — `/apply` y `/init` solo cargan los **abiertos** y filtran del lado server. Aunque tengas miles de issues en el repo, solo viajan los relevantes.
+
+### Qué NO hace Claude solo
+
+Para que sepas dónde vas a tener que decidir tú:
+
+- **Commits, push, abrir PR** — siempre con tu confirmación.
+- **Rebase / merge** — Claude detecta drift y propone, tú eliges.
+- **Borrar ramas locales o remotas** — se confirma.
+- **Mergear el PR** — eso lo haces tú o el reviewer en GitHub.
+- **Improvisar credenciales** — si `.claude-credentials` no funciona, Claude para y te lo dice. No prueba alternativas creativas.
 
 ## Modelo de trabajo
 
@@ -189,7 +221,21 @@ flowchart TD
 npx workspace-template update
 ```
 
-Compara hash por hash skills y rules contra el paquete actual. Marca cada cambio como nuevo (`+`), actualizado (`~`), personalizado (`!`) o obsoleto (`-`). Eliges qué aplicar — tus personalizaciones se respetan por defecto.
+Compara hash por hash skills, rules y scripts contra el paquete actual. Marca cada cambio:
+
+| Símbolo | Significa |
+|---|---|
+| `+` | Nuevo en el template, no estaba en tu workspace |
+| `~` | Actualizado upstream, sin cambios locales tuyos |
+| `!` | Actualizado upstream **pero tienes cambios locales** (default unchecked) |
+| `-` | Obsoleto, ya no existe en el template (default checked = se elimina) |
+| `×` | Lo borraste localmente — **no se reinstala** salvo que lo marques explícitamente |
+
+Eliges qué aplicar. **Tus cambios locales se respetan por defecto:**
+
+- Si modificaste un skill localmente, el update no lo sobrescribe a menos que lo elijas.
+- Si borraste un archivo del template a propósito (porque no lo usabas), el update **no lo trae de vuelta**. Aparece marcado con `×` para que lo recuperes solo si lo decides.
+- Si añadiste skills/rules tuyos que no son del template, el updater no los toca ni los lista.
 
 ## Stacks soportados
 
