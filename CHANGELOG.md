@@ -8,6 +8,81 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.1.3] — 2026-04-29
+
+Versión centrada en **sincronización completa del workspace + ciclo de PR explícito + producción no-destructiva + skills generadores con work-item + sub-issues**:
+
+1. El comando `update` ahora propaga también los GitHub issue templates, el `pull_request_template.md`, regenera `CLAUDE.md` desde el template upstream y genera/sincroniza un `docs/QUICK_START.md` por repo — todo sin pisar cambios locales.
+2. `/build` agrega un paso 6.5 donde el dev elige cómo cerrar el PR (review humano, self-merge, auto-merge, asignar reviewer) en lugar de dejar el PR sin instrucciones.
+3. `/deploy` reescrito para **detectar producción ya enlazada** (Vercel, Fly, Railway, workflows) y **no reconfigurar** si todo está sano.
+4. Los skills `/pentest`, `/audit`, `/secure` y `/deploy` ahora siguen todos el mismo patrón work-item + sub-issues nativos: cuando hay trabajo accionable, crean un padre con tasks vinculadas en lugar de un issue plano o un solo reporte.
+5. README reorganizado: el diagrama grande del flujo y las reglas detalladas se mueven a `docs/flujo-arquitectura.md`. El README queda con quickstart + dos ejemplos (paginación + drift contra `dev`) + tabla de comandos.
+
+### Added
+
+- **Sincronización de GitHub templates en `npx workspace-template update`** — `updater.js` y `computeDiff` ahora incluyen un nuevo kind `github` que rastrea los 6 archivos de `.github/ISSUE_TEMPLATE/` y `.github/pull_request_template.md`. Los cambios upstream se clasifican como `new`, `updated`, `customized` (editado localmente), `deletedByUser` o `removed`, con la misma semántica que skills y rules.
+- **Regeneración de `CLAUDE.md` en `update`** — cuando el `.hbs` upstream cambia y el `CLAUDE.md` local sigue siendo el último render sin editar, se regenera automáticamente con el contexto guardado. Si el dev editó `CLAUDE.md` a mano, aparece como `customized` y pregunta antes de sobrescribir.
+- **`templates/docs/QUICK_START.md.hbs` + `generateQuickStart`** — un **documento de inicio rápido por repo** con el ejemplo real (`/init` → `/plan` → `/apply` → `/build` → review → merge → `/deploy`) y la cheatsheet de comandos. Se genera en `<repoPath>/docs/QUICK_START.md` durante el setup de cada repo (single y multi), de modo que el dev no necesita ir al repo de `workspace-template` para entender el flujo.
+- **Sincronización de `docs/QUICK_START.md` en `update`** — mismo patrón que `CLAUDE.md`: si el `.hbs` upstream cambia y el archivo local sigue siendo el último render, se regenera. Si fue editado a mano, queda como `customized` y pregunta antes de sobrescribir. Helper genérico `diffHbsDoc` cubre cualquier doc Handlebars-rendered.
+- **Contexto de generación persistido en `.workspace-version`** — `generateMultiRepoCLAUDE`, `generateSingleRepoCLAUDE` y `generateQuickStart` guardan ahora `claudeMd.context` y `quickStart.context` (todos los parámetros del template), junto con `templateHash` y `lastRenderedHash`. Esto permite a `update` regenerar los docs en cualquier momento sin intervención manual.
+- **Hashes de GitHub templates en `.workspace-version`** — `generateIssueTemplates` registra los hashes bajo la clave `github` (clave = ruta destino relativa al repo).
+- **Estado `missingContext` para workspaces pre-1.1.3** — si el workspace fue generado con una versión que no persistía el contexto de generación, `update` reporta `CLAUDE.md: missingContext` (y lo mismo para `quickStart`) y los omite con un aviso en lugar de crashear.
+- **`/build` paso 6.5 — Elegir camino de review/merge del PR.** Tras abrir el PR, Claude pregunta explícitamente cómo cerrar el ciclo. Cuatro opciones: (1) **dejar para review del equipo** (default), (2) **mergear el dev mismo ahora** con `gh pr merge --squash --delete-branch`, (3) **auto-merge cuando pasen los checks** con `gh pr merge --auto`, (4) **asignar reviewer específico**. Nunca mergea sin pedido explícito; si el dev no eligió 2/3, el default es dejar el PR abierto.
+- **`/deploy` con auto-detección de producción ya enlazada (paso 0/0.5).** Antes de preguntar nada, escanea: `vercel.json`, `.vercel/project.json`, `fly.toml`, `railway.json`, `render.yaml`, `netlify.toml`, `firebase.json`, `Dockerfile`, workflows de deploy en `.github/workflows/`, runs recientes via `gh run list`, releases, branches protegidas y secrets configurados. Clasifica el estado en 4 casos:
+  - **Caso A** — ya en producción + CI/CD activo → reportar salud, **no reconfigurar**, salir con `✓`.
+  - **Caso B** — configs presentes pero sin workflow → ofrecer migrar a CI/CD.
+  - **Caso C** — nada detectado → setup completo.
+  - **Caso D** — ambiguo → preguntar al dev.
+
+### Changed
+
+- **`/pentest` reescrito para usar work-item + sub-issues nativos** — el skill ahora sigue exactamente el mismo patrón que `/plan`:
+  - Crea un **work-item padre** tipo `chore` con labels `chore,pentest,security`.
+  - Crea **una task (sub-issue nativo) por cada hallazgo** usando la mutación `addSubIssue` de GraphQL.
+  - Aplica **labels de severidad** (`severity-critical`, `severity-high`, `severity-medium`, `severity-low`) y de categoría en cada task.
+  - El body de cada task incluye descripción del problema, impacto y **remediación propuesta** (no solo la descripción del hallazgo).
+  - Findings `Info` van como checkboxes en el body del padre, sin abrir tasks.
+  - Padre y todas las tasks se agregan al **GitHub Project** del workspace.
+- **`/audit` migrado al modelo work-item + sub-issues** — antes terminaba en `gh issue create` plano con todo el reporte mezclado. Ahora, cuando hay hallazgos Critical/High/Medium en el PR auditado:
+  - Crea **work-item padre `[AUDIT] fix`** con labels `fix,audit,security`.
+  - **Una task (sub-issue nativo) por hallazgo** Critical/High/Medium con `addSubIssue`. Labels de severidad + categoría OWASP (`A01`..`A10`, `business-logic`, `hardening`).
+  - Body de cada task: descripción, impacto, **remediación con diff propuesto**, subtareas, criterios de aceptación.
+  - Hallazgos **Low/Info** no abren task — van como comentarios en el PR o checkboxes en el body del padre.
+  - Si no hay hallazgos accionables → `/audit` reporta ✓ y no crea nada en GitHub.
+  - Padre y tasks se agregan al GitHub Project del workspace.
+- **`/secure` migrado al modelo work-item + sub-issues** — antes creaba un issue plano con checklist cuando había bloqueantes. Ahora, cuando el checklist pre-deploy detecta bloqueantes:
+  - Crea **work-item padre `[SECURITY] fix`** con labels `fix,security,blocker`.
+  - **Una task por bloqueante** con `addSubIssue`. Labels de severidad + categoría del check (`env-vars`, `secrets`, `gitignore`, `deps`, `dockerfile`, `ci`, `prod-config`, `tests`).
+  - Body de cada task: check fallido, ubicación, impacto, **comando concreto de remediación**, subtareas, criterios de aceptación.
+  - Warnings no bloqueantes van como checkboxes en el body del padre, sin abrir task.
+  - Si pasa todo el checklist → `/secure` reporta ✓ y permite `/deploy` sin crear nada en GitHub.
+  - Padre y tasks se agregan al GitHub Project del workspace.
+- **`/deploy` migrado al modelo work-item + sub-issues** — antes generaba archivos sin estructurar el trabajo restante en GitHub. Ahora, según el caso del diagnóstico:
+  - **Caso A** (producción ya sana) → no crea nada, sale con ✓.
+  - **Caso B** (migración a CI/CD) → **work-item padre `[DEPLOY] chore`** con tasks **solo de los componentes faltantes** (típicamente `component-workflow`, `component-secrets`, `component-firstdeploy`).
+  - **Caso C** (setup completo) → work-item con todas las tasks aplicables (`component-docker`, `component-workflow`, `component-env`, `component-secrets`, `component-gitignore`, `component-firstdeploy`).
+  - Cada task tiene su propia plantilla con título, qué archivo se genera/modifica, criterios de aceptación, esfuerzo estimado y referencia al padre.
+  - Padre y tasks se agregan al GitHub Project. Se crea la rama `chore/<N>-deploy-<provider>` y se delega a `/apply` por task siguiendo el flujo normal.
+- **README reorganizado para reducir la curva de entrada** — antes contenía dos diagramas Mermaid grandes (flujo completo + modelo work-item) y la sección de comandos de soporte, todo de corrido. Eso podía abrumar a quien recién llega. Ahora:
+  - El diagrama grande del flujo completo, el diagrama del modelo work-item + sub-issues, las reglas del flujo y los comandos de soporte se mueven a **`docs/flujo-arquitectura.md`**.
+  - El README queda con: gancho + qué te da + quickstart + ejemplo paso a paso (paginación) + **segundo ejemplo nuevo: drift contra `dev` con rebase + conflicto** + tabla compacta de comandos del flujo principal + lista plana de los soportes.
+  - Pasa de ~360 líneas a 276.
+- **`writeVersionMetadata` en `workspace-gen.js` ahora preserva `claudeMd`, `quickStart`, `github` y `githubProject`** al regenerar la sección de skills/rules/scripts. Evita pisar metadata escrita por `generateMultiRepoCLAUDE` / `generateSingleRepoCLAUDE` / `generateIssueTemplates` cuando se llaman antes de `generateClaudeDir`.
+- **`mergeVersionMetadata` extendido** para fusionar también las claves `quickStart` y `claudeMd` (antes solo skills/rules/scripts/github/githubProject).
+- **`applyUpdates` en `updater.js`** extiende su loop a `github` y maneja `claudeMd` y `quickStart` — la regeneración de docs llama a Handlebars con el contexto guardado, escribe el archivo y actualiza `lastRenderedHash` + `templateHash` en `.workspace-version`.
+- **`bin/workspace-template.js`** — todos los `git add` del setup ahora incluyen `docs/` para que el commit inicial cubra `docs/QUICK_START.md`. El `git add` post-update en `runUpdate` también lo incluye.
+- **README — ejemplo paso a paso completado** — el caso `GET /users` cubre ahora también: (a) la pregunta de cómo cerrar el PR tras `/build`, (b) la limpieza automática post-merge (cierre del work-item, tasks colgantes, oferta de borrar la rama), (c) el camino de `/deploy` cuando producción ya existe.
+
+### Fixed
+
+- **`npx workspace-template update` no reflejaba cambios en issue templates ni en `pull_request_template.md`** — era necesario editarlos manualmente en cada proyecto después de modificarlos en el template base. Ya no.
+- **`npx workspace-template update` no regeneraba `CLAUDE.md` aunque el `.hbs` upstream hubiera cambiado** — el archivo quedaba desincronizado y había que reescribirlo a mano. Ya no.
+- **`/deploy` "improvisaba" setup completo aunque producción ya estuviera enlazada y sana** — re-generaba `Dockerfile`, workflows y `.env.example` que ya estaban en uso, desconfigurando el sistema. Ahora detecta primero el estado real y, si todo está sano, **sale sin tocar nada**.
+- **`/build` dejaba el PR abierto sin instrucciones explícitas sobre quién mergea** — implícitamente el dev tenía que recordar que era review humano. Ahora se pregunta y queda registrado en la sesión.
+- **`/audit`, `/secure`, `/deploy` producían issues planos o solo reportes en pantalla** — sin estructura accionable. Cada hallazgo, bloqueante o componente quedaba mezclado en un único checklist, imposible de delegar o trackear individualmente. Ahora siguen el mismo modelo work-item + sub-issues que `/plan` y `/pentest`: el reporte se traduce automáticamente en tasks vinculadas que se trabajan con `/apply` y cierran como un PR único cuando todas terminan.
+
+---
+
 ## [1.1.2] — 2026-04-28
 
 Versión centrada en **arranque rápido y predecible**: `/init` deja de "improvisar" cuando hay problemas de credenciales o cuando el repo tiene miles de issues. El cambio de rama es seguro (nunca pisa trabajo del dev), el updater respeta tus borrados locales, los commits siempre se confirman, y al mergear un PR todo el work-item queda limpio en automático.

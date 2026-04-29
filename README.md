@@ -52,67 +52,162 @@ Tras el merge, `/build` cierra el work-item, sus tasks colgantes y limpia la ram
 
 **Conversacional:** no necesitas escribir los slash commands literalmente. Si dices "planifiquemos un sistema de notificaciones" o "vamos a aplicar la siguiente task", Claude interpreta y avanza solo.
 
-### Flujo completo (con soporte y producción)
+### Ejemplo real paso a paso
 
-Una vez configurado, en cualquier sesión de Claude Code tienes los siguientes comandos. La parte central es el flujo básico de arriba; el resto entra cuando hay algo extra: tests fallan, hay drift contra `dev`, vas a producción, o necesitas auditar seguridad.
+> **Escenario:** agregar un endpoint `GET /users` con paginación.
 
-```mermaid
-flowchart TD
-    Start([Arrancar sesión]) --> Init["/init<br/>━━━━━━━<br/>• Lee issues / PRs / work-items<br/>• Posiciona en <code>dev</code><br/>• Detecta drift en tus ramas<br/>• Pregunta qué hacer"]
+---
 
-    Init --> Decide{¿Qué hacer?}
-    Decide -->|Continuar work-item<br/>en progreso| Apply
-    Decide -->|Empezar work-item<br/>asignado| Apply
-    Decide -->|Planificar algo<br/>nuevo| Plan
+**`/init`**
 
-    Plan["/plan<br/>━━━━━━━<br/>• Propone work-item + tasks<br/>• Pide CONFIRMACIÓN<br/>• Crea issues vinculados<br/>• Agrega al GitHub Project<br/>• Crea rama del work-item"]
-    Plan --> Apply
+**Claude:** Encontré 3 issues abiertos: `#8 fix login`, `#9 add pagination`, `#11 refactor auth`. ¿Trabajamos sobre alguno o tienes algo nuevo?
 
-    Apply["/apply<br/>━━━━━━━<br/>• Detecta drift vs <code>dev</code><br/>• Lee plan de la task activa<br/>• Implementa código<br/>• Corre tests<br/>• Marca subtareas hechas"]
-    Apply --> TestsOK{Tests OK?}
+**User:** Tengo algo nuevo.
 
-    TestsOK -->|NO| Debug["/debug<br/>━━━━━━━<br/>• Analiza error / log<br/>• Identifica causa raíz<br/>• Aplica fix"]
-    Debug --> Apply
+---
 
-    TestsOK -->|SÍ| Build["/build<br/>━━━━━━━<br/>• CONFIRMA commit<br/>• CONFIRMA push<br/>• Cierra la task"]
+**`/plan`**
 
-    Build --> MoreTasks{¿Quedan más<br/>tasks en el<br/>work-item?}
-    MoreTasks -->|SÍ| Apply
-    MoreTasks -->|NO| FinalPR["/build<br/>━━━━━━━<br/>• Detecta drift BLOQUEANTE<br/>• CONFIRMA abrir PR único<br/>(todas las tasks → <code>dev</code>)"]
+**User:** Quiero un endpoint `GET /users` con paginación.
 
-    FinalPR --> Review["/review<br/>━━━━━━━<br/>• Code review del PR<br/>• Checklist completo<br/>• Bloqueantes / mejoras"]
-    Review --> Merge([Merge a <code>dev</code>])
+**Claude:** Voy a crear en GitHub:
+- Work-item padre: `feat: paginated users endpoint`
+- Sub-issue #1: Crear ruta `GET /users?page&limit`
+- Sub-issue #2: Query con offset a la DB
+- Sub-issue #3: Respuesta `{ data, total, page }`
 
-    Merge --> ToProd{¿Va a<br/>producción?}
-    ToProd -->|NO| Stay([Sigue en <code>dev</code>])
-    ToProd -->|SÍ| Secure["/secure<br/>━━━━━━━<br/>Checklist BLOQUEANTE:<br/>• env vars<br/>• secrets en GitHub<br/>• CVEs<br/>• Dockerfile / CI"]
+¿Creo estos issues?
 
-    Secure --> Deploy["/deploy<br/>━━━━━━━<br/>• Genera Dockerfile<br/>• GitHub Actions<br/>• Configura secrets<br/>• Primer deploy"]
+**User:** Sí.
 
-    Deploy --> Broke{¿Algo se<br/>rompió?}
-    Broke -->|NO| Done([Producción ✓])
-    Broke -->|SÍ| Rollback["/rollback<br/>━━━━━━━<br/>• Revierte deploy<br/>• Crea post-mortem"]
+*Claude crea el work-item #15 y los sub-issues #16, #17, #18 en GitHub.*
 
-    classDef cmd fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
-    classDef decision fill:#3d2817,stroke:#d4861f,stroke-width:2px,color:#fff
-    classDef terminal fill:#1f3a1f,stroke:#5cb85c,stroke-width:2px,color:#fff
-    class Init,Plan,Apply,Debug,Build,FinalPR,Review,Secure,Deploy,Rollback cmd
-    class Decide,TestsOK,MoreTasks,ToProd,Broke decision
-    class Start,Merge,Stay,Done terminal
+---
 
-    click Init "templates/skills/init.md" "Ver skill /init"
-    click Plan "templates/skills/plan.md" "Ver skill /plan"
-    click Apply "templates/skills/apply.md" "Ver skill /apply"
-    click Debug "templates/skills/debug.md" "Ver skill /debug"
-    click Build "templates/skills/build.md" "Ver skill /build"
-    click FinalPR "templates/skills/build.md" "Ver skill /build"
-    click Review "templates/skills/review.md" "Ver skill /review"
-    click Secure "templates/skills/secure.md" "Ver skill /secure"
-    click Deploy "templates/skills/deploy.md" "Ver skill /deploy"
-    click Rollback "templates/skills/rollback.md" "Ver skill /rollback"
+**`/apply`**
+
+**Claude:** ¿Aplico el plan? Cada sub-issue será un commit.
+
+**User:** Sí.
+
+*Claude implementa #16 → commit `feat: add GET /users route`*
+*Claude implementa #17 → commit `feat: db query with pagination`*
+*Claude implementa #18 → commit `feat: paginated response format`*
+
+**Claude:** 3 commits listos en rama `feature/15-paginated-users`. ¿Corro el build?
+
+---
+
+**`/build`**
+
+**User:** Sí.
+
+*Claude corre `npm run test`*
+
+**Claude:** ✓ 24 tests pasando. ¿Abro el PR hacia `dev`?
+
+**User:** Sí.
+
+*Claude crea PR #19: `feat: GET /users with pagination` → `dev`, closes #16 #17 #18, linked a #15.*
+
+**Claude:** PR listo → [#19](../../pull/19). ¿Cómo quieres cerrar este PR?
+
+```
+1. Dejar para review del equipo  (default)
+2. Mergearlo yo mismo ahora      (squash + delete branch)
+3. Auto-merge cuando pasen los checks
+4. Asignar reviewer específico
 ```
 
-### Resumen rápido
+**User:** 1, déjalo para review.
+
+**Claude:** Hecho. Tu trabajo aquí terminó. Cuando otra persona apruebe y mergee, en la próxima `/init` cierro el work-item, las tasks colgantes y te ofrezco borrar la rama.
+
+---
+
+**Review en GitHub → merge a `dev` ✓**
+
+**Próxima `/init` o `/build` (post-merge):**
+
+*Claude detecta que PR #19 fue mergeado.*
+
+**Claude:**
+- Cerré work-item #15 y tasks #16 #17 #18 referenciando el merge.
+- Quité los labels `in-progress` y `review`.
+- ¿Borro la rama local y remota `feature/15-paginated-users`?
+
+**User:** Sí.
+
+*Rama eliminada. Board limpio.* ✓
+
+---
+
+### Segundo ejemplo: drift contra `dev` en mitad del trabajo
+
+Caso menos obvio: estás en una rama de feature, pero en `dev` se mergeó algo después de que arrancaste. `/apply` o `/build` lo detectan **antes** de dejarte commitear.
+
+---
+
+**Estás en `feature/15-paginated-users`, vas por la task #17.**
+
+**`/apply`**
+
+**Claude:** Antes de implementar — detecté que `dev` tiene 4 commits nuevos que no están en tu rama:
+
+```
+feat(auth): refresh token rotation
+fix(users): null check en serializer
+chore(deps): bump fastapi 0.115
+refactor(db): pool de conexiones
+```
+
+Tu rama puede tener conflictos al abrir el PR. Opciones:
+
+```
+1. Rebasear contra dev ahora               (recomendado si los cambios son de tu zona)
+2. Mergear dev en tu rama                  (preserva commits originales, deja merge commit)
+3. Continuar y resolver al abrir el PR     (más riesgoso)
+4. Cancelar y revisar manualmente
+```
+
+**User:** 1.
+
+*Claude rebasea. Hay conflicto en `apps/users/serializer.py`.*
+
+**Claude:** Conflicto en `apps/users/serializer.py:42`. El cambio de `fix(users): null check` toca el mismo serializer que tu task. ¿Lo resuelvo?
+
+```
+1. Ver el diff y resolver con tu input
+2. Quedarte con dev y reescribir tu cambio encima  (riesgo: pierdes lógica)
+3. Quedarte con tu rama y rechazar el cambio de dev (riesgo: regresión del fix)
+4. Cancelar el rebase
+```
+
+**User:** 1.
+
+*Claude muestra ambos lados, propone fusión que mantiene el null check + tu paginación, espera OK.*
+
+**User:** Aplica.
+
+*Rebase completo, sin conflictos pendientes. Tests siguen verdes.*
+
+**Claude:** Rebase OK. Ahora sí, ¿implemento la task #17?
+
+---
+
+Esto es lo que hace que el flujo no se rompa cuando trabajas en paralelo con un equipo: drift detection automático en `/init`, `/apply` y `/build`, y nunca usa `reset --hard` para resolver. El detalle del flujo completo y todos los comandos están en [docs/flujo-arquitectura.md](docs/flujo-arquitectura.md).
+
+---
+
+### ¿Y si quiero pasar esto a producción?
+
+Una vez que está en `dev` y quieres pase a producción, el flujo es `/secure` → `/deploy`. Si producción ya existe y está sana, `/deploy` lo detecta y no reconfigura nada — solo confirma. Si es la primera vez, crea un work-item con tasks por componente (Dockerfile, workflow, secrets, primer deploy) que trabajas con `/apply` como cualquier otro work-item.
+
+Ver [docs/flujo-arquitectura.md](docs/flujo-arquitectura.md#skills-generadores-cuándo-crean-work-item-y-cuándo-no) para el detalle.
+
+---
+
+## Comandos disponibles
 
 | Etapa | Comando | Para qué |
 |---|---|---|
@@ -121,94 +216,12 @@ flowchart TD
 | Implementar | [`/apply`](templates/skills/apply.md) | Trabaja la task activa, corre tests |
 | Guardar | [`/build`](templates/skills/build.md) | Commit + push + abre PR cuando todas las tasks cierran |
 | Revisar | [`/review`](templates/skills/review.md) | Code review del PR antes de mergear |
-| Pre-deploy | [`/secure`](templates/skills/secure.md) | Checklist bloqueante (env vars, secrets, CVEs) |
-| Deploy | [`/deploy`](templates/skills/deploy.md) | Genera Dockerfile, GitHub Actions, primer deploy |
+| Pre-deploy | [`/secure`](templates/skills/secure.md) | Checklist bloqueante; crea work-item con tasks si hay bloqueantes |
+| Deploy | [`/deploy`](templates/skills/deploy.md) | Diagnóstico + setup; crea work-item con tasks por componente |
 
-### Comandos de soporte
+**Comandos de soporte:** [`/branches`](templates/skills/branches.md), [`/sync`](templates/skills/sync.md), [`/cross`](templates/skills/cross.md), [`/audit`](templates/skills/audit.md), [`/pentest`](templates/skills/pentest.md), [`/triage`](templates/skills/triage.md), [`/design`](templates/skills/design.md), [`/setup`](templates/skills/setup.md), [`/debug`](templates/skills/debug.md), [`/rollback`](templates/skills/rollback.md), [`/test`](templates/skills/test.md), [`/tools`](templates/skills/tools.md).
 
-```mermaid
-flowchart LR
-    A["/branches<br/>Audita y normaliza<br/>main / dev / staging"]
-    B["/sync<br/>Drift entre código<br/>y plan en GitHub"]
-    C["/cross<br/>Cambios que afectan<br/>varios repos"]
-    D["/audit<br/>Revisión OWASP<br/>profunda"]
-    E["/pentest<br/>Barrida completa<br/>de seguridad"]
-    F["/triage<br/>Limpieza de issues<br/>y board"]
-    G["/design<br/>UI/UX, estilos,<br/>accesibilidad"]
-    H["/setup<br/>Regenera CLAUDE.md<br/>de un repo"]
-
-    classDef support fill:#2d2d44,stroke:#9b6dff,stroke-width:2px,color:#fff
-    class A,B,C,D,E,F,G,H support
-
-    click A "templates/skills/branches.md" "Ver skill /branches"
-    click B "templates/skills/sync.md" "Ver skill /sync"
-    click C "templates/skills/cross.md" "Ver skill /cross"
-    click D "templates/skills/audit.md" "Ver skill /audit"
-    click E "templates/skills/pentest.md" "Ver skill /pentest"
-    click F "templates/skills/triage.md" "Ver skill /triage"
-    click G "templates/skills/design.md" "Ver skill /design"
-    click H "templates/skills/setup.md" "Ver skill /setup"
-```
-
-### Reglas clave del flujo
-
-1. **Toda planificación bajo un work-item padre** (feature / refactor / fix / chore).
-2. **Una rama por work-item**, prefijo según su tipo (`feature/N-...`, `refactor/N-...`, `fix/N-...`, `chore/N-...`).
-3. **Una task = un commit** (Conventional Commits con doble referencia).
-4. **Un work-item = un PR único** al cerrar todas sus tasks.
-5. **Confirmación obligatoria** antes de commit, push y apertura de PR — cada vez, sin excepciones.
-6. **Drift detection automático** en `/init`, `/apply`, `/build` — Claude avisa si tu rama está atrás de `dev` y ofrece sincronizar.
-7. **Conversacional** — Claude interpreta intención y avanza solo, sin que escribas cada slash command.
-8. **Cambio de rama seguro en `/init`** — si tienes cambios sin commitear o commits sin push, Claude **no se mueve**: te ofrece commit, stash o quedarte en la rama. Nunca usa `checkout -f` ni `reset --hard`.
-9. **Cierre automático post-merge** — al mergear el PR, `/build` cierra el work-item, sus tasks colgantes y ofrece borrar la rama. Nada queda `in-progress` si el work-item ya está completo.
-10. **Lectura mínima de issues** — `/apply` y `/init` solo cargan los **abiertos** y filtran del lado server. Aunque tengas miles de issues en el repo, solo viajan los relevantes.
-
-### Qué NO hace Claude solo
-
-Para que sepas dónde vas a tener que decidir tú:
-
-- **Commits, push, abrir PR** — siempre con tu confirmación.
-- **Rebase / merge** — Claude detecta drift y propone, tú eliges.
-- **Borrar ramas locales o remotas** — se confirma.
-- **Mergear el PR** — eso lo haces tú o el reviewer en GitHub.
-- **Improvisar credenciales** — si `.claude-credentials` no funciona, Claude para y te lo dice. No prueba alternativas creativas.
-
-## Modelo de trabajo
-
-Toda planificación se agrupa bajo un **work-item padre** (issue con label `feature`, `refactor`, `fix` o `chore`). Sus **tasks** son sub-issues vinculados nativamente. Una rama por work-item, un commit por task, **un solo PR** al cerrar todas las tasks.
-
-```mermaid
-flowchart TD
-    Parent["<b>[FEATURE] #12</b><br/>Sistema de pagos<br/><i>(work-item padre)</i>"]
-
-    Parent --> T1["<b>#42 — task</b><br/><code>feat: Webhook handler</code>"]
-    Parent --> T2["<b>#43 — task</b><br/><code>feat: Endpoint /payments</code>"]
-    Parent --> T3["<b>#44 — task</b><br/><code>refactor: Cálculo de impuestos</code>"]
-
-    T1 -.->|1 commit| C1["<code>feat(payments): webhook (#42)<br/>— feature #12</code>"]
-    T2 -.->|1 commit| C2["<code>feat(payments): endpoint (#43)<br/>— feature #12</code>"]
-    T3 -.->|1 commit| C3["<code>refactor(payments): impuestos (#44)<br/>— feature #12</code>"]
-
-    C1 --> Branch["Rama: <code>feature/12-sistema-pagos</code><br/>(creada desde <code>dev</code>)"]
-    C2 --> Branch
-    C3 --> Branch
-
-    Branch --> PR(["<b>1 solo PR</b> hacia <code>dev</code><br/>cuando todas las tasks están cerradas"])
-
-    classDef parent fill:#3d2817,stroke:#d4861f,stroke-width:2px,color:#fff
-    classDef task fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
-    classDef commit fill:#2d2d44,stroke:#9b6dff,stroke-width:1px,color:#fff
-    classDef branch fill:#1f3a1f,stroke:#5cb85c,stroke-width:2px,color:#fff
-    class Parent parent
-    class T1,T2,T3 task
-    class C1,C2,C3 commit
-    class Branch,PR branch
-```
-
-**Prefijo de la rama según el tipo del work-item:**
-`feature/N-...`, `refactor/N-...`, `fix/N-...`, `chore/N-...`
-
-**Tasks descubiertas durante el desarrollo** se agregan al mismo work-item padre (si forman parte de cerrar bien lo que estás haciendo). Si es un problema de algo ya en producción → nuevo work-item de tipo `fix`.
+Diagrama del flujo completo, modelo de trabajo y reglas detalladas → [docs/flujo-arquitectura.md](docs/flujo-arquitectura.md).
 
 ## Single-repo vs Multi-repo
 
@@ -254,8 +267,9 @@ El CLI detecta lo que falta y muestra el comando de instalación según tu OS.
 
 ## Más
 
-- [CHANGELOG.md](CHANGELOG.md) — todas las versiones y cambios
+- [docs/flujo-arquitectura.md](docs/flujo-arquitectura.md) — diagrama completo, modelo work-item + tasks, reglas del flujo
 - [docs/flujo-autenticacion.md](docs/flujo-autenticacion.md) — cómo el CLI resuelve credenciales
+- [CHANGELOG.md](CHANGELOG.md) — todas las versiones y cambios
 
 ## Licencia
 

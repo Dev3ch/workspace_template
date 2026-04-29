@@ -199,6 +199,63 @@ gh issue edit $PARENT_N --add-label "review" --remove-label "in-progress"
 
 **Multi-repo:** si el work-item afecta varios repos, abrir un PR por repo (nunca consolidar repos distintos en un solo PR). Cada PR cierra las tasks que le corresponden a ese repo.
 
+### 6.5. Elegir el camino de review/merge
+
+Una vez abierto el PR, preguntar al dev cómo quiere cerrar el ciclo. **Esta decisión es del dev, no de Claude** — nunca mergear automáticamente sin que el dev lo pida.
+
+```
+PR #19 abierto → https://github.com/<owner>/<repo>/pull/19
+
+¿Cómo quieres cerrar este PR?
+
+  1. Dejar para review del equipo  (default — workflow estándar)
+       Otra persona del equipo revisa, comenta y mergea cuando esté listo.
+       Yo no toco el PR. Tu trabajo aquí terminó.
+
+  2. Mergear yo mismo ahora
+       Si eres solo-dev, lo hago con squash merge a dev y cierro todo.
+       (Equivale a `gh pr merge --squash --delete-branch`).
+
+  3. Auto-merge cuando pasen los checks
+       Lo dejo en cola: GitHub mergea cuando CI termine en verde.
+       (Equivale a `gh pr merge --auto --squash`).
+
+  4. Asignarlo a alguien específico para que lo revise
+       Le pongo reviewer y lo dejo abierto.
+```
+
+Implementación según la opción:
+
+```bash
+case "$CHOICE" in
+  1)
+    # Sin acción extra: el PR queda abierto con label "review".
+    echo "PR queda en review. Cuando el equipo mergee, /build paso 8 cerrará el work-item."
+    ;;
+  2)
+    gh pr merge "$PR_NUMBER" --squash --delete-branch
+    # Inmediatamente saltar al paso 8 (cierre automático tras merge).
+    ;;
+  3)
+    # Requiere que el repo tenga "Allow auto-merge" habilitado en Settings.
+    gh pr merge "$PR_NUMBER" --auto --squash --delete-branch || {
+      echo "⚠  Auto-merge no está habilitado en este repo."
+      echo "   Activa Settings → General → 'Allow auto-merge' o usa la opción 1."
+    }
+    ;;
+  4)
+    read -p "Usuario o equipo a asignar como reviewer (ej: @octocat o org/team): " REVIEWER
+    gh pr edit "$PR_NUMBER" --add-reviewer "$REVIEWER"
+    ;;
+esac
+```
+
+**Reglas:**
+- **Default = opción 1 (dejar para review humano).** No es deuda técnica esperar review — es el workflow correcto en equipos.
+- **Opción 2 (self-merge) solo tiene sentido para solo-devs** o repos donde el dev tiene permisos de merge directo. Si la rama protegida `dev` requiere review, esto fallará y se reporta el error sin reintentos creativos.
+- **Opción 3 (auto-merge) requiere "Allow auto-merge" habilitado** en Settings del repo. Si no está, sugerir habilitarlo y caer a opción 1 o 4.
+- **Nunca mergear sin que el dev pida explícitamente la opción 2 o 3.** Si el dev solo dijo "abre el PR", el default es **dejarlo abierto**.
+
 ### 7. Actualizar el work-item con el progreso global
 
 Comentar el work-item con un resumen de la sesión:

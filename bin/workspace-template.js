@@ -763,7 +763,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken,
         await normalizeRepoBranches(repoPath, { owner: owner.trim(), repo: repoName, token: projectToken });
 
         // Commit de la config de Claude Code en dev
-        await execa('git', ['add', '.github/', '.claude/', 'CLAUDE.md'], { cwd: repoPath });
+        await execa('git', ['add', '.github/', '.claude/', 'CLAUDE.md', 'docs/'], { cwd: repoPath });
         await execa('git', ['commit', '-m', 'chore(setup): add Claude Code workspace config and GitHub templates'], { cwd: repoPath });
         await execa('git', ['push', '-u', 'origin', 'dev'], { cwd: repoPath });
         console.log(chalk.green('✓ Config de Claude Code commiteada en dev'));
@@ -819,7 +819,7 @@ async function stepSingleRepo(ghUser, { selectedSkills, mcpConfig, projectToken,
 
     // Intentar commitear issue templates
     try {
-      await execa('git', ['add', '.github/', '.claude/', 'CLAUDE.md'], { cwd: repoPath });
+      await execa('git', ['add', '.github/', '.claude/', 'CLAUDE.md', 'docs/'], { cwd: repoPath });
       await execa('git', ['commit', '-m', 'chore(setup): add Claude Code workspace config and GitHub templates'], { cwd: repoPath });
       console.log(chalk.green('✓ Cambios commiteados en el repo'));
     } catch {
@@ -1031,7 +1031,7 @@ async function stepMultiRepo(ghUser, { selectedSkills, mcpConfig, projectToken, 
 
       // Commitear
       try {
-        await execa('git', ['add', '.github/', '.claude/', 'CLAUDE.md'], { cwd: repo.repoPath });
+        await execa('git', ['add', '.github/', '.claude/', 'CLAUDE.md', 'docs/'], { cwd: repo.repoPath });
         await execa('git', ['commit', '-m', 'chore(setup): add Claude Code workspace config and GitHub templates'], { cwd: repo.repoPath });
       } catch {
         // sin cambios o sin permisos — no bloquea
