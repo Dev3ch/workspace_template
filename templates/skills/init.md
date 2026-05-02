@@ -176,31 +176,45 @@ done
 
 No buscar más allá de esto. Si más adelante una skill detecta otra inconsistencia puntual, la arregla en el momento; no es trabajo de `/init` recorrer todo el backlog cada vez.
 
-### 2. Revisar work-items pendientes (server-side filter, una sola query)
+### 2. Revisar work-items pendientes (server-side filter, dos queries)
 
-**Regla de oro:** nunca traer todos los issues del repo y filtrar localmente. Aunque haya 5000, traemos solo los que importan ahora — los que están **asignados a mí** y **en estado de trabajo activo o pendiente** (no los cerrados, no los del backlog ajeno). Esto se hace **server-side** con la search API (un solo round-trip):
+**Regla de oro:** nunca traer todos los issues del repo y filtrar localmente. Traemos solo los que importan ahora — los míos y los libres del lote, con sus estados de ownership. Esto se hace **server-side**:
 
 ```bash
 source .claude/scripts/gh-isolated.sh || exit 1
 
-# Una sola query: issues abiertos asignados a mí, con label de work-item.
-# Filtramos labels y assignee del lado server. Limitamos page-size; rara vez
-# un dev tiene >50 work-items abiertos simultáneos.
-gh api -X GET search/issues \
+# Query 1: work-items abiertos asignados a mí (los que tengo en marcha o pendientes).
+MY_WORK=$(gh api -X GET search/issues \
   -f q="repo:$GH_REPO is:issue is:open assignee:$GITHUB_USER label:feature,refactor,fix,chore" \
   -F per_page=50 \
   --jq '[.items[] | {
     number, title, url: .html_url,
     labels: [.labels[].name],
+    assignees: [.assignees[].login],
     in_progress: ([.labels[].name] | index("in-progress") != null)
-  }]'
+  }]')
+
+# Query 2: work-items abiertos SIN asignar (libres del lote, los puede tomar el dev).
+FREE_WORK=$(gh api -X GET search/issues \
+  -f q="repo:$GH_REPO is:issue is:open no:assignee label:feature,refactor,fix,chore" \
+  -F per_page=50 \
+  --jq '[.items[] | {
+    number, title, url: .html_url,
+    labels: [.labels[].name]
+  }]')
+
+# Query 3 (opcional, solo si el dev pregunta o hay drift sospechoso): work-items
+# abiertos asignados a OTROS devs con in-progress (visibilidad multi-dev).
+# Por defecto NO se muestran en /init para no abrumar.
 ```
 
-Partir el resultado en dos grupos en una sola pasada local:
-- `in_progress: true` → "Work-items en progreso".
-- `in_progress: false` → "Work-items asignados sin empezar".
+Partir `MY_WORK` en tres grupos:
+- `in_progress: true` → "Work-items en progreso (tuyos)".
+- `in_progress: false`, asignado a mí → "Work-items asignados sin empezar (tuyos)".
 
-**Si el resultado es vacío** → mensaje corto: "No hay work-items asignados. ¿Planificar uno nuevo? → `/plan`". No hacer queries adicionales.
+`FREE_WORK` → "Work-items libres del lote (puedes tomar)".
+
+**Si todo vacío** → mensaje corto: "No hay work-items asignados ni libres. ¿Planificar algo nuevo? → `/plan`".
 
 **Tasks (sub-issues): solo las de los work-items en progreso.** No de los planeados ni de los cerrados — eso gasta tokens y no aporta nada al arranque:
 
@@ -239,25 +253,24 @@ gh issue view <N> --json title,body,comments,assignees,labels,url
 
 ### 5. Presentar estado y preguntar al dev qué hacer
 
-Mostrar un resumen claro, agrupado por work-item:
+Mostrar un resumen claro, agrupado por work-item, **con visibilidad del lote completo y ownership**:
 
 ```
 === Estado actual ===
 Rama: dev (al día con origin)
 
-Work-items en progreso:
+Work-items en progreso (tuyos):
   [FEATURE] #12 — Sistema de pagos con Stripe (feature/12-sistema-pagos-stripe)
     └─ ⏳ #42 — feat: Webhook handler (in-progress)
     └─ □  #43 — feat: Endpoint /payments/intent
     └─ □  #44 — refactor: Extraer cálculo de impuestos
 
-  [REFACTOR] #15 — Migración de auth a sessions
-    └─ ✅ #50 — refactor: Eliminar JWT helper
-    └─ ⏳ #51 — refactor: Adaptar middleware (in-progress)
-
-Work-items asignados sin empezar:
+Work-items asignados sin empezar (tuyos):
   [FIX] #20 — Race condition en webhook
+
+Work-items libres del lote (puedes tomar):
   [FEATURE] #25 — Notificaciones push
+  [FIX] #18 — Logout no cierra sesión
 
 PRs abiertos:
   #80 — feat: Sistema de pagos (work-item #12) [draft]
@@ -268,19 +281,44 @@ Luego preguntar explícitamente:
 ```
 ¿Qué quieres hacer?
   1. Continuar con un work-item en progreso
-  2. Empezar un work-item asignado sin arrancar
-  3. Planificar algo nuevo → /plan
-  4. Otra cosa
+  2. Empezar un work-item ya asignado a ti (sin arrancar)
+  3. Tomar un work-item libre del lote
+  4. Planificar algo nuevo → /plan
+  5. Otra cosa
 ```
 
-Esperar respuesta del dev. No asumir.
+Esperar respuesta del dev. **No asumir.**
 
 ### 6. Orientación según la elección
 
-- **Opción 1:** mostrar el work-item, su task activa, verificar que la rama existe y está al día. Indicar el próximo paso concreto.
-- **Opción 2:** confirmar arrancar el work-item, crear la rama `<tipo>/<N>-<slug>` desde `dev`, marcar la primera task como `in-progress`.
-- **Opción 3:** invocar `/plan` directamente.
-- **Opción 4:** escuchar al dev.
+- **Opción 1:** mostrar el work-item, su task activa, verificar que la rama existe y está al día. Indicar el próximo paso concreto (`/apply`).
+- **Opción 2:** confirmar arrancar el work-item. Delegar a `/apply` (que hará chequeo de ownership, asignación, label `in-progress` y creación de rama desde `dev`).
+- **Opción 3 (tomar libre):** confirmar al dev. Delegar a `/apply` con el `#N` del work-item libre — `/apply` se asigna el work-item, marca `in-progress` y crea la rama. Tras esto, otros devs verán el work-item como "tomado" y no lo ofrecerán.
+- **Opción 4:** invocar `/plan` directamente.
+- **Opción 5:** escuchar al dev — pero **no editar código sin work-item**. Si pide tocar archivos sin que haya un work-item activo y tasks abiertas, redirigir a `/plan` (regla `no-edit-without-plan`).
+
+### 6.5. Guardrail no-edit-without-plan (mid-chat)
+
+Si en cualquier momento de la sesión, **después de `/init`**, el dev pide modificar código (ej: "agrega un endpoint para X", "arregla el bug de Y") **y no hay un work-item asignado al dev en `in-progress` con tasks abiertas** que cubra ese trabajo:
+
+```
+⛔ No puedo modificar código sin un work-item planificado.
+
+Lo que pediste no tiene una task en GitHub que lo respalde. Editar `dev` o
+una rama de feature sin plan de respaldo está prohibido por el flujo del
+workspace.
+
+Opciones:
+  1. Planificar primero  → /plan (recomendado, conversacional)
+  2. Si es un fix urgente → /plan modo express (un work-item con una sola task,
+     queda registrado igual)
+  3. Cancelar
+```
+
+**Excepciones que NO disparan el guardrail:**
+- Hotfix explícito autorizado por el dev (queda como work-item `fix` o `hotfix` igual, pero la rama puede arrancar antes — ver `/apply` excepciones).
+- Trabajo de auditoría/lectura (`/audit`, `/pentest`, `/review`) — no escriben código de producción.
+- Edición de archivos de configuración del propio workspace (`.claude/`, `CLAUDE.local.md`).
 
 ## Output esperado
 
@@ -288,18 +326,22 @@ Esperar respuesta del dev. No asumir.
 === Sesión iniciada ===
 Rama: dev (al día con origin)
 
-Work-items en progreso:
+Work-items en progreso (tuyos):
   [FEATURE] #12 — Sistema de pagos con Stripe
     └─ task activa: #42 — feat: Webhook handler
 
-Work-items asignados sin empezar:
+Work-items asignados sin empezar (tuyos):
   [FIX] #20 — Race condition en webhook
+
+Work-items libres del lote (puedes tomar):
+  [FEATURE] #25 — Notificaciones push
 
 ¿Qué quieres hacer?
   1. Continuar con [FEATURE] #12 — task #42
   2. Empezar [FIX] #20
-  3. Planificar algo nuevo → /plan
-  4. Otra cosa
+  3. Tomar [FEATURE] #25
+  4. Planificar algo nuevo → /plan
+  5. Otra cosa
 ```
 
 ## Siguiente paso
@@ -307,7 +349,7 @@ Work-items asignados sin empezar:
 Según la elección del dev:
 
 - **Continuar work-item en progreso** → `/apply` en la rama existente con la task activa
-- **Empezar work-item asignado** → `/apply` (crea la rama `<tipo>/<N>-<slug>` desde `dev`)
+- **Empezar work-item asignado / Tomar work-item libre** → `/apply` (asigna, marca `in-progress`, crea la rama desde `dev`)
 - **Planificar algo nuevo** → `/plan`
 - **Otros devs hicieron cambios recientes** → `/sync` primero, luego volver aquí
 - **Hay un PR abierto esperando review** → `/review`
@@ -315,7 +357,9 @@ Según la elección del dev:
 
 ## Notas
 
-- Si no hay work-items asignados, sugerir revisar el backlog del GitHub Project.
+- Si no hay work-items asignados ni libres, sugerir revisar el backlog del GitHub Project o invocar `/plan`.
 - Nunca asumir contexto de sesiones anteriores — siempre leer desde GitHub.
 - **Base por defecto: `dev`.** Cualquier trabajo en `main` requiere confirmación explícita y no persiste entre sesiones.
 - Los **work-items** agrupan trabajo coherente (feature, refactor, fix, chore). Las **tasks** son las piezas concretas dentro de un work-item. No hay tasks sin work-item padre.
+- **Regla `no-edit-without-plan` (paso 6.5):** mid-chat, si el dev pide editar código sin work-item de respaldo, redirigir a `/plan`. No improvisar ediciones en `dev` ni en rama de feature sin task que lo cubra.
+- **Visibilidad multi-dev:** el lote del plan puede tener piezas tomadas por otros. `/init` lista propios + libres. Para tomar uno libre, `/apply` se encarga de marcarlo "tomado" para que el resto del equipo lo vea.

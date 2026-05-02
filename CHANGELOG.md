@@ -8,6 +8,74 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.1.4] — 2026-05-01
+
+Versión centrada en **flujo interactivo correcto y guardrails de granularidad**: `/apply` ya no implementa varias tasks de un tirón ni salta entre work-items, `/build` no agrupa cambios de varias tasks en un solo commit, `/plan` crea **lotes de work-items** con visión completa del trabajo, y se documenta la regla `no-edit-without-plan` como invariante del workspace para evitar ediciones improvisadas en `dev` sin tasks de respaldo. También se introduce **chequeo de ownership multi-dev** para que el equipo pueda tomar piezas distintas del mismo plan sin pisarse.
+
+### Why
+
+Caso real reportado por el dev: una sesión de Claude con la versión anterior implementó **4 tasks (#209, #210, #211, #212) en una sola invocación de `/apply`** y luego `/build` cerró todo con un único commit, dejando esas 4 tasks abiertas en GitHub aunque el código ya estaba hecho — board desincronizado del código. La auto-crítica de esa sesión apuntó al gap exacto: **`/apply` decía "trabajar una task a la vez" como nota al final, no como barrera**, y `/build` no validaba que el diff correspondiera a una sola task. Esta versión convierte esas reglas en **STOP gates** explícitos.
+
+Adicionalmente, casos donde el dev arranca chateando ("modifica X", "agrega Y") y Claude iba directo a `dev` sin pasar por `/plan` — la regla de "nunca crear código sin work-item previo" estaba como sugerencia, no como guardrail bloqueante. Ahora es una regla dura `no-edit-without-plan` enforced en `/init`, `/apply` y CLAUDE.md.
+
+### Added
+
+- **`/plan` soporta lote de N work-items cuando los alcances son inconexos.** Default sigue siendo **1 work-item por `/plan`** — eso es lo normal. Solo se crean varios cuando el dev mencionó temas **temáticamente independientes** entre sí (ej: "onboarding de usuario" + "refresh token JWT" → dos work-items distintos). Tener muchas tasks coherentes (todas alrededor del mismo tema) **no es razón para partir** — un work-item con 8-12 tasks coherentes está bien. Cuando se detectan múltiples áreas, `/plan` pregunta al dev antes de asumir. Output del lote: visión completa con #IDs y nombres de ramas futuras antes de empezar.
+- **`/apply` STOP gate explícito (paso 10).** Una invocación de `/apply` = una task. Al terminar de implementar y correr tests, `/apply` se detiene y reporta. **No lee la siguiente task. No salta a otro work-item.** El output incluye una marca visible `⛔ Esta invocación de /apply termina aquí` con el próximo paso esperado (`/build`).
+- **`/apply` chequeo de ownership multi-dev (paso 2).** Antes de tomar un work-item, `/apply` revisa `assignees` y label `in-progress` en GitHub:
+  - **Caso A** (libre) → se asigna el work-item al dev y agrega `in-progress` (lockea para el equipo).
+  - **Caso B** (ya es del dev actual) → continúa.
+  - **Caso C** (asignado a otro dev con `in-progress`) → **bloquea**, avisa, ofrece otros work-items libres del lote. Nunca pisa trabajo ajeno.
+- **`/apply` crea la rama del work-item desde `dev` (paso 4).** Antes era responsabilidad de `/plan` ofrecer crearla; ahora `/plan` solo crea issues y `/apply` es quien materializa la rama cuando alguien arranca el work-item. Evita ramas vacías huérfanas en remoto si un work-item del lote nunca se toma.
+- **`/apply` guardrail `no-edit-without-plan` (paso 0.5).** Si no hay work-item asignado al dev en `in-progress` con tasks abiertas, `/apply` rechaza la edición y redirige a `/plan`. Cubre el caso donde el dev invoca `/apply` por inercia sin haber planificado.
+- **`/build` guardrail "diff multi-task" (paso 1).** Si el diff actual toca archivos atribuibles a más de una task abierta, `/build` **bloquea** el commit y obliga a partir: ofrece commitear solo los archivos de la task activa o cancelar para revisar manualmente con `git add -p`. Heurística de atribución por scope/notas técnicas/path; en caso de ambigüedad pregunta al dev. Esto enforce el patrón "1 commit = 1 task" que antes estaba como nota.
+- **`/build` pregunta nueva tras la última task del work-item (paso 6).** En lugar de proponer PR automáticamente, ofrece tres caminos: (1) abrir PR ahora, (2) agregar más tasks al work-item antes de cerrar (vuelve a `/plan` modo agregar), (3) dejar el work-item sin PR aún. El dev decide cuándo está realmente "completo".
+- **`/build` ofrece el siguiente work-item del lote tras el merge (paso 8).** Cuando `/build` detecta que el PR mergeó y limpia el work-item padre, lista los **otros work-items** del repo agrupados por ownership: tuyos sin empezar, libres del lote, y (solo informativo) los tomados por otros devs. Pregunta si tomar uno antes de cerrar la sesión.
+- **`/init` muestra el lote completo con ownership (paso 5).** El listado se divide en tres grupos: work-items tuyos en progreso, tuyos sin empezar, y libres del lote. Las opciones del menú incluyen "Tomar un work-item libre del lote" (delegando a `/apply` para que valide ownership y cree rama).
+- **`/init` guardrail `no-edit-without-plan` mid-chat (paso 6.5).** Si el dev pide editar código en cualquier momento de la sesión sin un work-item activo, `/init` redirige a `/plan` con un mensaje accionable. Cubre el caso real donde el dev arranca chateando "modifica X" sin planificar.
+- **`CLAUDE.md.hbs` reglas operativas 13.1, 13.2, 13.3, 13.4** documentan los invariantes de granularidad (1 `/apply` = 1 task, 1 `/build` = 1 commit), el modelo de lotes en `/plan`, y el chequeo de ownership multi-dev en `/apply` y `/build`.
+- **`CLAUDE.single.md.hbs` regla 6 reescrita** con el principio `no-edit-without-plan` y reglas 7-9 con la granularidad y ownership invariantes.
+- **Gate de tests por stack en `/apply` paso 7 — detección automática + comando one-shot, no-interactivo.** Nueva función `detectTestCapabilities(repoPath)` en [lib/stack-detect.js](lib/stack-detect.js) que devuelve `{ kind, stacks, gate: { framework, cmd, timeoutSec }, suggestions }`. Mapeo:
+  - **Django con pytest** → `uv run pytest -x -q --tb=short` (180s)
+  - **Django sin pytest** → `python manage.py test --keepdb -v 1` (180s)
+  - **FastAPI** → `uv run pytest -x -q --tb=short` (180s)
+  - **Go** → `go test -short -count=1 ./...` (180s)
+  - **Flutter** → `flutter test --reporter compact` (180s)
+  - **React Native con jest** → `<pkg-mgr> test -- --ci --reporters=default` (120s)
+  - **Frontend web (Next/React/Vue/Nuxt) con Playwright** → `<pkg-mgr> run test:e2e` (240s)
+  - **Frontend web sin Playwright** → no bloquea, sugiere abrir chore para integrarlo
+
+  Convenciones del gate: `CI=true`, sin watchers, sin browsers headed, sin prompts, timeout duro por gate. Mocks > datos reales (MSW para frontend que llama API). Nunca pedir credenciales reales al dev — si la task requiere auth real y no es mockable, declara `gate: skipped (manual)` y sigue.
+- **Detección de package manager (`detectPackageManager`) por lockfile.** Orden de prioridad: `pnpm-lock.yaml` → `pnpm`, `yarn.lock` → `yarn`, `bun.lockb`/`bun.lock` → `bun`, fallback `npm`. Todos los comandos JS/TS del gate respetan el package manager detectado en lugar de asumir `npm`.
+- **Frontend web — Playwright como gate único.** Decisión del workspace: en frontend web no se usa Vitest/Jest unitario como gate; Playwright cubre el flujo real del usuario en navegador, que es lo que importa para apps. El dev puede correr unitarios a mano si quiere, pero `/apply` no los invoca. Convenciones obligatorias en [templates/rules/tests.md](templates/rules/tests.md):
+  - **Script `test:e2e` en `package.json`** (no `dev` ni `start` — esos chocan con comandos clásicos).
+  - **Puerto `39847` para el webServer** de Playwright (rango efímero alto, fuera de 3000/5173/8080/4200/8000). Configurable con `PLAYWRIGHT_E2E_PORT`.
+  - **`webServer` configurado en `playwright.config.ts`** — el runner levanta y baja el server local con `reuseExistingServer: !CI`. `/apply` nunca arranca `npm run dev` aparte.
+  - **Carpeta `tests/e2e/`** al nivel del repo, fuera de `app/` y `src/` — el bundler de producción no la incluye.
+  - **Headless siempre** en el gate. `--headed` queda para debug manual del dev.
+- **`templates/rules/tests.md` extendido con sección "Gate de tests por stack"** — tabla de comandos por stack, convenciones de Playwright (script, puerto, webServer, carpeta), spec mínimo de UI (happy path + caso de error), y el patrón para frontend sin Playwright (no bloquea, sugiere chore de integración con pasos concretos: instalar `@playwright/test`, `playwright install --with-deps`, crear config, agregar script, crear carpeta, actualizar `.gitignore`).
+- **Tests son parte de la misma task — no una task aparte.** Documentado en `/apply` paso 7 y `CLAUDE.md.hbs`. El commit que cierra la task incluye código + spec del test (excepto tasks puramente de docs/chore/refactor sin lógica nueva).
+
+### Changed
+
+- **Regla `no-edit-without-plan` ascendida a invariante del workspace.** Antes era una sugerencia ("Si el dev pide implementar algo y no hay work-item visible, preguntar si quiere crear el plan primero con `/plan`"). Ahora en `CLAUDE.md.hbs` regla 6 es **rechazo bloqueante**: Claude no edita código de producción sin work-item de respaldo, sin excepciones (salvo auditorías de lectura, edición de `.claude/`, y hotfix explícitamente autorizado por el dev). El cambio aplica tanto al inicio de la sesión como mid-chat.
+- **`/plan` ya no crea ramas.** Antes el paso 8 ofrecía crear la rama `<tipo>/<N>-<slug>` desde `dev` al final. Ahora `/plan` solo crea issues + sub-issues + links al Project. La rama es responsabilidad de `/apply` cuando alguien arranque el work-item específico. Razón: con lote de N work-items, crear N ramas vacías ensucia el remoto y muchas pueden no usarse nunca.
+- **`/apply` paso 1: si hay más de un work-item `in-progress` del dev, pregunta cuál tomar.** Antes asumía el primero.
+- **`/build` paso 5 reorganizado:** si quedan tasks abiertas, pregunta `¿continuamos con la siguiente?` con opción de parar. Si se confirma, marca la siguiente con `in-progress` y delega a `/apply` (que pasará por su STOP gate al terminar).
+- **`/build` paso 6 ya no abre PR automáticamente** tras cerrar la última task. Pregunta primero los tres caminos (abrir PR / agregar tasks / dejar sin PR).
+- **`/init` query de issues extendida con segunda búsqueda de work-items libres** (`no:assignee`) para mostrar el lote completo del plan. Antes solo mostraba los asignados al dev.
+- **Output esperado de `/init`** incluye sección "Work-items libres del lote" y opción de menú para tomarlos.
+
+### Fixed
+
+- **Caso real: `/apply` implementaba múltiples tasks de un tirón sin pausar.** Sesiones reales reportaron que `/apply` leía las 4 tasks abiertas, las implementaba todas seguidas, y solo al final el dev invocaba `/build`, que terminaba colapsando 4 tasks en 1 commit y dejando las otras 3 tasks abiertas en GitHub. La regla "una task a la vez" estaba como nota textual al final de `/apply`, no como barrera. Ahora el paso 10 de `/apply` es un STOP gate explícito con marca visible en el output, imposible de saltar sin desobedecer la skill.
+- **Caso real: `/build` agrupaba diff multi-task en un solo commit.** No había validación de que los archivos cambiados correspondieran a una sola task. El paso 1 ahora detecta archivos atribuibles a más de una task abierta y bloquea el commit hasta que el dev parta el cambio. Heurística por scope/notas técnicas/path con fallback de pregunta al dev.
+- **Caso real: Claude editaba `dev` mid-chat sin work-item.** El dev arrancaba chateando "modifica X", "agrega Y" y Claude iba directo a `dev` a editar. La regla "nunca crear código sin work-item previo" estaba como sugerencia ("preguntar si quiere crear el plan primero"), no como bloqueo. Ahora `no-edit-without-plan` es regla dura en `CLAUDE.md.hbs` (regla 6), `/init` paso 6.5 y `/apply` paso 0.5 — Claude rechaza la edición y redirige a `/plan` antes de tocar nada.
+- **Multi-dev: dos devs podían tomar el mismo work-item del lote sin saberlo.** No había validación de ownership; la rama `<tipo>/<N>-<slug>` se creaba al arrancar y el segundo dev se encontraba con la rama ya en remote sin contexto. El paso 2 de `/apply` ahora chequea `assignees` + label `in-progress` y bloquea si está tomado por otro dev. Cuando un dev libre toma un work-item, `/apply` se asigna el issue + agrega `in-progress` (lockea visiblemente para el equipo); cualquier `/init` posterior de otro dev verá el work-item como tomado y no lo ofrecerá.
+- **Tras el merge, `/build` no orientaba al siguiente trabajo.** El dev quedaba en limbo después del cierre del work-item. El paso 8 ahora lista los work-items abiertos restantes filtrados por ownership y ofrece tomar el siguiente del lote o terminar la sesión.
+
+---
+
 ## [1.1.3] — 2026-04-29
 
 Versión centrada en **sincronización completa del workspace + ciclo de PR explícito + producción no-destructiva + skills generadores con work-item + sub-issues**:
@@ -490,7 +558,10 @@ Primera versión estable. CLI completo para configurar workspaces de Claude Code
 - Paquete distribuye solo `bin/`, `lib/`, `templates/`, `setup.sh` y `README.md`.
 - Requiere Node 18+ (recomendado 22 LTS).
 
-[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Dev3ch/workspace_template/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/Dev3ch/workspace_template/compare/v1.1.3...v1.1.4
+[1.1.3]: https://github.com/Dev3ch/workspace_template/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/Dev3ch/workspace_template/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/Dev3ch/workspace_template/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Dev3ch/workspace_template/compare/v1.0.9...v1.1.0
 [1.0.9]: https://github.com/Dev3ch/workspace_template/compare/v1.0.8...v1.0.9

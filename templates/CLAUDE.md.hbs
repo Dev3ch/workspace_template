@@ -155,7 +155,11 @@ Soporte:
 3. Antes de cada deploy: `/secure` es obligatorio — no omitir.
 4. Si el plan en GitHub no refleja el código: correr `/sync` antes de continuar.
 5. Si aparece un aprendizaje que debe persistir: commitearlo al `CLAUDE.md` del repo correspondiente.
-6. **Nunca escribir código sin un work-item previo.** Si el dev pide implementar algo y no hay work-item visible, preguntar si quiere crear el plan primero con `/plan`.
+6. **`no-edit-without-plan` (regla dura, no negociable).** Claude **no puede** modificar código de producción (cualquier archivo fuera de `.claude/` y `CLAUDE.local.md`) **sin** un work-item asignado al dev en estado `in-progress` con tasks abiertas que respalde el cambio. Esto aplica **siempre, también mid-chat**:
+   - Si el dev escribe "agrega X" / "arregla Y" / "modifica Z" sin haber pasado por `/plan` → **rechazar la edición** y redirigir: `⛔ No puedo modificar código sin work-item planificado. → /plan` (o `/plan` express si es un fix urgente, igual queda registrado).
+   - Aplica también si el dev arranca chateando sin invocar `/init`: la falta de planificación no es excusa para editar `dev`.
+   - **Nunca** modificar `dev` directamente. Toda edición vive en una rama `<tipo>/<N>-<slug>` creada por `/apply` desde `dev`.
+   - Excepciones acotadas (no aplica el guardrail): trabajo de auditoría/lectura (`/audit`, `/pentest`, `/review`), edición de `.claude/` o `CLAUDE.local.md`, y hotfix explícitamente autorizado por el dev (que igual queda como work-item `fix`/`hotfix`).
 7. **`/plan` se activa también por texto.** Si el dev dice "quiero planificar", "hagamos un plan para X", "¿qué tareas necesitamos?", "¿cómo lo dividimos?", "tengo este bug", etc. — tratar como invocación de `/plan` aunque no haya escrito el comando.
 8. **Todo trabajo parte desde `dev`.** Las ramas `feature/*`, `refactor/*`, `fix/*`, `chore/*` y `hotfix/*` se crean desde `dev`, nunca directamente en `dev` o `main`.
 9. **Cualquier comando `gh` debe usar las credenciales del proyecto, no la sesión global del sistema.** Antes de ejecutar cualquier `gh issue`, `gh pr`, `gh api`, `gh project`, etc. — incluso fuera de una skill, aunque sea en respuesta a una pregunta de chat — siempre hacer primero: `source .claude/scripts/resolve-gh-creds.sh || exit 1`. Nunca asumir que `gh auth status` local es la cuenta correcta para el repo.
@@ -163,6 +167,16 @@ Soporte:
 11. **Toda planificación se agrupa bajo un work-item padre.** No hay tasks huérfanas. Un work-item es un issue padre con label `feature`, `refactor`, `fix` o `chore`. Sus tasks son sub-issues vinculados nativamente con `addSubIssue` de GraphQL. Las subtareas internas van como checkboxes en el body de la task, no como issues separados. Si el work-item resulta demasiado grande, se divide en dos work-items — nunca en sub-sub-tasks.
 12. **El tipo del work-item determina el prefijo de la rama.** `feature` → `feature/<N>-<slug>`, `refactor` → `refactor/<N>-<slug>`, `fix` → `fix/<N>-<slug>`, `chore` → `chore/<N>-<slug>`. Las tasks dentro pueden ser de tipos mixtos (feat, fix, refactor, test, docs) y eso se refleja en cada commit con Conventional Commits.
 13. **Un work-item = una rama = un PR final.** Cada task cerrada se commitea en la misma rama con mensaje `<tipo>(scope): descripción (#task-N) — <tipo-padre> #parent-N`. El PR hacia `dev` se abre **solo cuando todas las tasks están cerradas** y el dev confirma.
+13.1. **Granularidad invariante:**
+   - **Una invocación de `/apply` = una task.** Se implementa una sola task por invocación; al terminar `/apply` se detiene (STOP gate explícito) y devuelve el control al dev. No encadena tasks ni salta a otro work-item.
+   - **Una invocación de `/build` = una task = un commit.** Si el diff abarca cambios de varias tasks, `/build` lo detecta y obliga a partir antes de commitear.
+   - Esto preserva el patrón "1 task = 1 commit" y mantiene el flujo interactivo: el dev confirma cada commit, cada push y cada apertura de PR. Sin esto, `/apply` tiende a implementar varias tasks de un tirón y `/build` colapsa todo en un solo commit, dejando el board de GitHub desincronizado del código.
+13.2. **`/plan` puede crear N work-items en una sola invocación** cuando el alcance descrito por el dev abarca varios trabajos independientes. La salida es la **visión completa del lote** con todos los #IDs antes de empezar. `/plan` **no crea ramas** — eso es responsabilidad de `/apply` cuando alguien arranque ese work-item específico.
+13.3. **Ownership multi-dev (chequeo bloqueante en `/apply`).** Antes de tomar un work-item, `/apply` revisa `assignees` y label `in-progress` en GitHub:
+   - Sin asignar y sin `in-progress` → libre. `/apply` se asigna el work-item y marca `in-progress` (lockea para el resto del equipo).
+   - Asignado a otro dev con `in-progress` → **NO tocar.** Avisar y ofrecer otros work-items libres del lote.
+   - Asignado al dev actual → continuar.
+13.4. **Tras el merge del PR, `/build` ofrece el siguiente work-item del lote** filtrando por ownership: solo lista los propios (sin empezar) y los libres. Los tomados por otros devs no se ofrecen como opción.
 14. **Si aparece trabajo nuevo durante la implementación**: si forma parte de cerrar BIEN el work-item activo → nueva task hija del mismo padre. Si es un problema de algo ya mergeado en producción → nuevo work-item de tipo `fix` (separado).
 15. **Confirmación obligatoria antes de acciones visibles.** Claude pregunta antes de: crear issues, crear la rama, hacer commit, hacer push, abrir el PR. Lo único sin preguntar son acciones reversibles locales (editar archivos, correr tests, leer código).
 16. **Drift detection — la rama del work-item se mantiene al día con `dev`.** Mientras varios devs trabajan en paralelo, otros pueden mergear cosas a `dev` y dejar tu rama atrás. Claude chequea drift en estos puntos:
