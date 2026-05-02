@@ -157,6 +157,50 @@ gh issue edit "$TASK_N" --add-assignee "@me" --add-label "in-progress"
 
 Tras esto, cualquier `/init` de otro dev verá el work-item como tomado y no lo ofrecerá.
 
+### 3.7 Configurar modo de push del work-item (una sola vez)
+
+**Solo si es la primera invocación de `/apply` sobre este work-item** (el work-item no tiene aún tag `<!-- push-mode: ... -->` en sus comentarios). Si ya hay modo configurado, saltar este paso silenciosamente.
+
+```bash
+HAS_MODE=$(gh issue view "$PARENT_N" --json comments \
+  --jq '[.comments[].body | scan("<!-- push-mode: (on-pr|per-task|manual) -->")] | length' \
+  2>/dev/null || echo 0)
+```
+
+Si `HAS_MODE == 0`, preguntar al dev cómo quiere manejar los push de este work-item:
+
+```
+Este work-item tiene N tasks. ¿Cómo manejamos los push?
+
+  1. on-pr     — push consolidado al final, justo antes de abrir el PR  ✓ (default)
+                 Recomendado para solo-dev, work-items cortos, ramas con CI ruidoso
+                 o pre-push hooks lentos. Un solo push por todo el work-item.
+
+  2. per-task  — push después de cada commit (comportamiento clásico)
+                 Recomendado si compartes la rama con otro dev o quieres backup
+                 remoto continuo durante work-items largos.
+
+  3. manual    — solo pusheo cuando me lo pidas explícitamente
+                 Para devs que prefieren control total (raro).
+```
+
+El modo elegido se persiste como comentario en el work-item para que `/build` lo lea en cada commit:
+
+```bash
+gh issue comment "$PARENT_N" --body "Push mode configurado: $PUSH_MODE
+
+<!-- push-mode: $PUSH_MODE -->
+
+Detalle:
+- on-pr     → push consolidado antes del PR
+- per-task  → push después de cada /build
+- manual    → push solo si lo pides
+
+Puedes cambiarlo en cualquier momento diciéndome \"cambia el push mode a <modo>\"."
+```
+
+**Override por chat:** si en cualquier momento del work-item el dev dice "cambia el push mode a per-task" / "ya no pushees hasta el final" / etc., actualizar el tag con un nuevo comentario (gana el más reciente).
+
 ### 4. Verificar / crear rama de trabajo
 
 ```bash
@@ -415,5 +459,6 @@ Si durante el trabajo aparece algo que NO estaba planeado (bug en una task ya ce
 - **No hacer commit dentro de `/apply`** — ese es trabajo de `/build`, siempre con confirmación.
 - **No tomar work-items de otros devs.** El paso 2 (chequeo de ownership) es bloqueante.
 - **Crear la rama del work-item es responsabilidad de `/apply`,** no de `/plan`. La primera invocación sobre un work-item nuevo es la que la crea desde `dev`.
+- **Configurar el push mode una sola vez (paso 3.7).** En la primera invocación sobre el work-item, preguntar al dev y persistir en un comentario del padre. `/build` lo lee en cada commit. Default `on-pr` (push consolidado antes del PR).
 - **Nunca modificar tests existentes** para que pasen — solo el código de producción.
 - **Costo:** este skill puede consumir muchos tokens. Priorizar Edit sobre Write, grep sobre Read de archivos completos, y pedir contexto al dev antes de explorar.

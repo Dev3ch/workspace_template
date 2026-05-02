@@ -72,8 +72,13 @@ Todo contexto de proyecto vive en GitHub.
 | Estado de una feature | Issue de GitHub (comments) |
 | Plan de un work-item | Body del issue padre + sub-issues (tasks) |
 | Progreso de sesión | Comment en el issue activo |
+| Push mode del work-item | Comment del issue padre con tag `<!-- push-mode: on-pr/per-task/manual -->` |
 | Convenciones | Este `CLAUDE.md` + `.claude/rules/` |
 | Preferencias personales | `CLAUDE.local.md` (no commitear) |
+
+## Personalización del workspace
+
+Modelo **"workspace files inviolables"**: skills/rules/scripts del template se sobrescriben en cada `update`. Para personalizar, **copia el archivo con otro nombre** en lugar de editar el original. Skills/rules/MCPs propios del proyecto (no del template) se preservan intactos.
 
 ## Flujo estándar de trabajo
 
@@ -101,7 +106,7 @@ Soporte:
 3. Antes de cada deploy: `/secure` es obligatorio.
 4. Si el plan en GitHub no refleja el código: correr `/sync`.
 5. Aprendizajes que deben persistir: commitear al `CLAUDE.md`.
-6. **`no-edit-without-plan` (regla dura, no negociable).** Claude **no puede** modificar código de producción sin un work-item asignado al dev en `in-progress` con tasks abiertas. Si el dev pide cambios mid-chat sin haber planificado → redirigir a `/plan` (o `/plan` express). **Nunca** editar `dev` directamente; toda edición va en rama `<tipo>/<N>-<slug>` creada por `/apply`.
+6. **`no-edit-without-plan` (regla dura, enforced por hook).** Un hook `PreToolUse` (`.claude/scripts/no-edit-without-plan.sh`) bloquea Edit/Write/Bash-con-redirección cuando la rama actual es `dev`/`main`/`staging` o no tiene prefijo de work-item (`feature/*`, `fix/*`, `refactor/*`, `chore/*`, `hotfix/*`). El bloqueo es técnico, no convencional. Whitelist: `.claude/`, `CLAUDE.local.md`, `.gitignore`. Bypass de emergencia: `CLAUDE_ALLOW_DIRECT_EDIT=1`. Flujo correcto: `/plan` → `/apply` (crea rama) → editar.
 7. **Granularidad invariante:** una invocación de `/apply` = una task (STOP al terminar). Una invocación de `/build` = una task = un commit (si el diff abarca varias tasks, `/build` lo detecta y obliga a partir).
 8. **`/plan` crea N work-items de una vez** cuando el alcance abarca trabajos independientes. La rama la crea `/apply` al arrancar cada work-item, no `/plan`.
 9. **Ownership multi-dev:** `/apply` valida `assignees` y label `in-progress` antes de tomar un work-item. Si otro dev ya lo tomó, no se toca.

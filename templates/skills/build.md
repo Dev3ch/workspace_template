@@ -1,6 +1,6 @@
 ---
 name: build
-description: Commit + push de UNA task. Cierra la task en GitHub. Al cerrar la última task del work-item, pregunta PR/más tasks/dejar y luego ofrece pasar al siguiente work-item del lote.
+description: Commit de UNA task + push según el modo del work-item (on-pr default / per-task / manual). Cierra la task en GitHub. Al cerrar la última task pregunta PR/más tasks/dejar; en modo on-pr+manual hace push consolidado antes del PR.
 ---
 
 # /build
@@ -94,33 +94,79 @@ git commit -m "<tipo>(<scope>): descripción de la task (#<TASK_N>) — <tipo-pa
 
 **Un commit = una task cerrada.** Si en una sesión cerraron dos tasks, son dos invocaciones de `/build` con sus dos commits separados, cada uno con su confirmación.
 
-### 3. Confirmar push con el dev
+### 3. Push según el modo configurado del work-item
 
-**Chequeo silencioso de drift antes del push:** si han pasado más de 10 minutos desde el último chequeo (`_DRIFT_LAST_CHECK_AT`), hacer `git fetch origin dev --quiet` y comparar. Si la rama está atrás, mencionarlo en el prompt:
+**Modos de push (configuración por work-item):**
+
+| Modo | Cuándo pushea | Para quién |
+|---|---|---|
+| `on-pr` (default) | **Solo cuando todas las tasks cerraron** y el dev confirma abrir el PR | Solo-dev / work-items cortos / ramas con CI ruidoso o pre-push hooks lentos |
+| `per-task` | Después de cada commit (comportamiento clásico) | Equipos grandes, ramas compartidas con otros devs, work-items largos donde quieres backup remoto continuo |
+| `manual` | Solo cuando el dev lo pide explícitamente | Devs que prefieren control total (raro, pero válido) |
+
+**Default: `on-pr`.** Pushear por cada task ensucia el feed del repo, dispara CI N veces y multiplica el costo de pre-push hooks lentos. Para el caso típico (1 dev, 1 work-item, 4-8 tasks), pushear una sola vez al final es lo correcto.
+
+**Resolver el modo activo:**
+
+```bash
+# Lee el tag <!-- push-mode: <modo> --> en cualquier comentario del work-item padre.
+# Si hay varios, gana el más reciente (último comment con el tag).
+PUSH_MODE=$(gh issue view "$PARENT_N" --json comments \
+  --jq '[.comments[].body | scan("<!-- push-mode: (on-pr|per-task|manual) -->")][-1][0]' \
+  2>/dev/null || echo "")
+
+# Sin configurar todavía → default
+[ -z "$PUSH_MODE" ] && PUSH_MODE="on-pr"
+```
+
+**Si `PUSH_MODE` no está configurado** (primera invocación de `/build` sobre el work-item), se asume `on-pr` silenciosamente. La pregunta de modo se hace en `/apply` paso 3.7, no aquí — `/build` ya está enfocado en cerrar la task.
+
+**Chequeo silencioso de drift contra `dev`:** si han pasado más de 10 minutos desde el último chequeo (`_DRIFT_LAST_CHECK_AT`), hacer `git fetch origin dev --quiet` y comparar. Mencionar el heads-up solo si vamos a pushear (modo `per-task`).
+
+**Comportamiento por modo:**
+
+#### Modo `per-task` — push ahora
 
 ```
 ¿Pusheamos a origin/feature/12-sistema-pagos-stripe? [S/n]
 
+  Modo activo: per-task (push después de cada commit)
   ℹ  Heads-up: dev avanzó 2 commits desde tu último chequeo.
      Cuando termines la última task del work-item, te avisaré para sincronizar
      antes del PR.
 ```
 
-Si está al día, prompt simple:
-
-```
-¿Pusheamos a origin/feature/12-sistema-pagos-stripe? [S/n]
-```
-
 Si confirma:
 
 ```bash
-git push origin <work-branch>
+git push origin <work-branch>     # -u si la rama no tiene upstream
 ```
 
-Si la rama no tiene upstream:
+#### Modo `on-pr` — saltar push, anunciar
+
+**No preguntar push.** Solo informar:
+
+```
+✓ Commit local creado (a1b2c3d).
+  Modo activo: on-pr. El push se hará al cerrar la última task del work-item,
+  justo antes de abrir el PR. Si quieres pushear ahora, di "pushea ahora".
+```
+
+#### Modo `manual` — saltar push silenciosamente
+
+```
+✓ Commit local creado (a1b2c3d).
+  Modo activo: manual. El push lo haces tú con `git push` cuando quieras.
+```
+
+**Override por chat (cualquier modo):** si el dev dice "pushea ahora", "haz push ya", "súbelo al remote" → pushear esta task aunque el modo sea `on-pr` o `manual`. No cambia el modo persistido — es un push puntual.
+
+**Cambiar el modo mid-flight:** si el dev dice "ya no pushees hasta el final" o "pushea cada commit", actualizar el tag en el work-item:
+
 ```bash
-git push -u origin <work-branch>
+gh issue comment "$PARENT_N" --body "Push mode actualizado: <nuevo-modo>
+
+<!-- push-mode: <on-pr|per-task|manual> -->"
 ```
 
 ### 4. Cerrar la task y registrar el commit
@@ -184,9 +230,36 @@ Si elige 1 → marcar #43 con `in-progress` y delegar a `/apply`. Si elige 2 →
 - Si elige 2 → invocar `/plan` en modo "agregar a `#12`" para crear nuevas tasks hijas. Tras crear, volver al ciclo `/apply` → `/build`.
 - Si elige 3 → terminar la invocación. El work-item queda sin PR; el próximo `/init` lo seguirá listando como en progreso.
 
-### 6.5. Chequeo crítico de drift contra dev y apertura del PR
+### 6.5. Push final (si hay commits locales sin pushear) + chequeo crítico de drift contra dev y apertura del PR
 
-**Antes de abrir el PR: chequeo crítico de drift contra dev.**
+**Push final antes del PR.** En modo `on-pr` o `manual`, el work-item probablemente tiene commits locales que aún no están en remote. Antes de abrir el PR, pushear todo lo pendiente con una sola confirmación:
+
+```bash
+LOCAL_AHEAD=$(git rev-list --count "@{upstream}..HEAD" 2>/dev/null || git rev-list --count HEAD)
+```
+
+Si `LOCAL_AHEAD > 0`:
+
+```
+Antes de abrir el PR: hay $LOCAL_AHEAD commit(s) local(es) sin pushear.
+
+  Commits a pushear:
+    a1b2c3d feat(payments): webhook handler (#42) — feature #12
+    e4f5g6h feat(payments): /payments/intent (#43) — feature #12
+    i7j8k9l refactor(payments): cálculo de impuestos (#44) — feature #12
+
+¿Pushear ahora todos los commits del work-item? [S/n]
+```
+
+Si confirma:
+
+```bash
+git push -u origin "$WORK_BRANCH"     # -u por si la rama no tenía upstream
+```
+
+Si rechaza, abortar la apertura del PR (no se puede abrir un PR con commits que no están en remote).
+
+**Chequeo crítico de drift contra dev** (igual que antes):
 
 ```bash
 git fetch origin dev --quiet
@@ -430,10 +503,12 @@ Si elige tomar uno → asignárselo y delegar a `/apply` (que pasará por su che
 ## Notas
 
 - **Una invocación de `/build` cierra exactamente UNA task en GitHub.** Si quedan archivos en el working tree que pertenecen a otra task, son para el próximo `/build`. El paso 1 detecta diff multi-task y bloquea.
-- **Confirmación obligatoria** antes de cada commit, push y apertura de PR. Nunca asumir.
+- **Confirmación obligatoria** antes de cada commit. El push depende del modo del work-item (`on-pr` default / `per-task` / `manual`); el de apertura de PR siempre se confirma.
 - **Un commit = una task.** No agrupar varias tasks en un commit.
-- **El PR se abre solo cuando todas las tasks están cerradas Y el dev confirma** "abrir PR ahora" en el paso 6.
+- **Push: default `on-pr` — push consolidado antes del PR.** Pushear por cada task (`per-task`) solo cuando el equipo lo necesita (ramas compartidas, work-items largos). El modo se persiste en un comentario del work-item con `<!-- push-mode: <modo> -->` y se elige una vez en `/apply` paso 3.7.
+- **Override por chat:** si el dev dice "pushea ahora" en cualquier modo, se pushea esta task; el modo persistido no cambia. Si dice "ya no pushees hasta el final" / "pushea cada commit", se actualiza el modo en el comentario del work-item.
+- **El PR se abre solo cuando todas las tasks están cerradas Y el dev confirma** "abrir PR ahora" en el paso 6. Antes del PR, paso 6.5 pushea cualquier commit local pendiente.
 - **Conventional Commits siempre.** El tipo del commit refleja la task, no el work-item padre.
 - **Tras el merge, ofrecer el siguiente work-item con chequeo de ownership** — nunca tomar uno que ya tiene a otro dev asignado con `in-progress`.
-- Si el trabajo está en varios repos, hacer push en todos los que correspondan.
+- Si el trabajo está en varios repos, hacer push en todos los que correspondan (respetando el modo de cada work-item).
 - Nunca guardar progreso en archivos locales fuera del repo.

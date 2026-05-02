@@ -8,6 +8,65 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ---
 
+## [1.1.5] — 2026-05-01
+
+Versión centrada en **enforcement técnico del flujo y reducción de fricción operativa**: tres cambios grandes que atacan ruidos reportados por el dev en uso real.
+
+### Why
+
+Tres problemas reportados por el dev tras usar 1.1.4 en proyectos reales:
+
+1. **Ediciones improvisadas en `dev` seguían pasando.** La regla `no-edit-without-plan` estaba documentada pero el modelo se la saltaba racionalizando "esto es un script chiquito, no necesita work-item". Texto en CLAUDE.md ≠ enforcement.
+2. **Push por cada task era ruidoso.** Pre-push hooks lentos, CI dispara N veces, feed del repo lleno de pushes intermedios. Para solo-dev y work-items cortos esto es sobrecosto sin beneficio.
+3. **`update` dejaba "basurita" en proyectos consumidores.** El updater preservaba archivos que el dev había editado localmente (estado `customized`), generando divergencia entre el template y los proyectos. Para un template usado en N proyectos como source of truth, esto era exactamente lo opuesto al comportamiento deseado.
+
+### Added
+
+- **Hook `PreToolUse` `no-edit-without-plan` — enforcement técnico, no convencional.** Nuevo script [templates/scripts/no-edit-without-plan.sh](templates/scripts/no-edit-without-plan.sh) registrado en `.claude/settings.json` que se ejecuta antes de cada `Edit`/`Write`/`MultiEdit`/`NotebookEdit`/`Bash` con redirección. Lógica:
+  - Bloquea (exit 2) si la rama actual es `dev`/`main`/`staging` o cualquier branch sin prefijo de work-item (`feature/*`, `fix/*`, `refactor/*`, `chore/*`, `hotfix/*`).
+  - Whitelist siempre permitida en cualquier rama: `.claude/`, `CLAUDE.local.md`, `.gitignore`, `/tmp/`.
+  - Cierra la evasión obvia: detecta redirecciones (`>`, `>>`), `tee`, `sed -i`, `perl -i`, `cat > file` en comandos `Bash` y los bloquea con la misma lógica.
+  - Bypass de emergencia: `CLAUDE_ALLOW_DIRECT_EDIT=1` (queda log a stderr).
+  - Mensaje de error pedagógico que explica el flujo correcto: `/plan` → `/apply` → editar.
+  Esto cierra el caso reportado donde el modelo decía "creo el script de demo en `dev` porque es chiquito" ignorando el guardrail. Ahora no es decisión del modelo: el harness rechaza la tool call.
+- **Push modes por work-item: `on-pr` (default) / `per-task` / `manual`.** El modo se persiste como comentario del work-item padre con tag `<!-- push-mode: <modo> -->` (siguiendo la context policy "todo en GitHub"). `/apply` paso 3.7 pregunta una vez en la primera invocación sobre el work-item; `/build` paso 3 lo lee y aplica:
+  - **`on-pr`** (default) — commit local sí, push solo al final cuando todas las tasks cierran y antes de abrir el PR (paso 6.5). Recomendado para solo-dev, work-items cortos, ramas con CI ruidoso o pre-push hooks lentos.
+  - **`per-task`** — push después de cada commit (comportamiento clásico). Para ramas compartidas con otros devs o work-items largos.
+  - **`manual`** — push solo si el dev lo pide explícitamente.
+  Override por chat: "pushea ahora" hace push puntual sin cambiar el modo. "Cambia el push mode a X" actualiza el tag con un nuevo comentario (gana el más reciente). El push consolidado en paso 6.5 (`/build`) maneja `LOCAL_AHEAD > 0` con una sola confirmación antes de abrir el PR.
+- **Sección "Personalización del workspace" en `CLAUDE.md.hbs` y `CLAUDE.single.md.hbs`.** Documenta el modelo "workspace files inviolables": qué archivos sobrescribe el updater (skills, rules, scripts, github templates) y cuáles preserva (skills/rules custom del proyecto, `CLAUDE.local.md`, MCPs en `settings.json`, `CLAUDE.md` con prompt). Recomienda copiar el archivo con otro nombre si necesitas un comportamiento distinto, en lugar de editar el original.
+
+### Changed
+
+- **Updater: modelo "workspace files inviolables".** [lib/updater.js](lib/updater.js) reescrito. Cambios:
+  - Eliminados los estados `customized` y `deletedByUser` para skills/rules/scripts/github. Ahora cada archivo es uno de tres: `toUpdate` (hash difiere del template upstream — siempre se sobrescribe), `unchanged` (igual al upstream), `removed` (desapareció del template — se borra del proyecto).
+  - Eliminados los checkboxes por-archivo. Una sola confirmación global: "¿sobrescribir N archivos del workspace desde el template?". Si el dev acepta, todos los `toUpdate` y `removed` se aplican; si rechaza, no se toca nada.
+  - Aviso explícito antes de la confirmación: "los archivos del workspace se sobrescribirán completamente; tus skills/rules custom no se tocan".
+  - Archivos locales que NO están en el registry de `.workspace-version` (skills/rules custom del dev) no se listan ni se inspeccionan — el updater los ignora completamente.
+  - Resultado: `update` es predecible y termina dejando el proyecto bit-a-bit igual al template para los archivos que comparten. Imposible que queden "a medias" entre versiones.
+- **`/build` skill: paso 3 reescrito como "Push según el modo configurado del work-item".** En modo `on-pr` o `manual` el commit se hace local y se anuncia que el push va al final (o que el dev lo controla). Solo `per-task` mantiene el prompt clásico de push después de cada commit. Paso 6.5 nuevo bloque "Push final": antes de abrir el PR, si hay `LOCAL_AHEAD > 0`, una sola confirmación pushea todo lo pendiente.
+- **`/apply` skill: paso 3.7 nuevo "Configurar modo de push del work-item".** Solo se ejecuta en la primera invocación sobre el work-item (detecta tag previo en comentarios). Persiste la elección como comentario del padre. Override por chat documentado: "cambia el push mode a per-task" / "ya no pushees hasta el final".
+- **`CLAUDE.md.hbs` regla 6 (`no-edit-without-plan`) y `CLAUDE.single.md.hbs` regla 6 reescritas.** Ahora reflejan que el guardrail es enforcement técnico (hook `PreToolUse`), no convencional. Documentan whitelist (`.claude/`, `CLAUDE.local.md`, `.gitignore`, `/tmp/`) y bypass (`CLAUDE_ALLOW_DIRECT_EDIT=1`).
+- **`generateClaudeDir` ahora siempre escribe `.claude/settings.json`** (antes solo si había MCP), para registrar el hook `no-edit-without-plan`. Función nueva `mergeHooks()` exportada en [lib/workspace-gen.js](lib/workspace-gen.js): idempotente, preserva MCPs y hooks custom del usuario.
+- **Updater detecta y mergea el hook en workspaces existentes.** Nuevo bloque en `computeDiff` para `.claude/settings.json` con cuatro estados: `unchanged` (hook ya registrado), `missing` (no existe → se crea), `needsHookMerge` (existe pero le falta el hook → se agrega preservando lo demás), `corrupt` (JSON inválido → se omite con aviso). Workspaces v1.1.4 hechos `update` reciben el hook con un solo prompt ("¿agregar el hook no-edit-without-plan preservando el resto?").
+
+### Removed
+
+- Estados `customized`, `deletedByUser`, `new` y `updated` por archivo del diff del updater (skills/rules/scripts/github). El nuevo modelo solo distingue `toUpdate` / `unchanged` / `removed`.
+- Checkboxes por-archivo en el flujo interactivo de `update`. La preservación de cambios locales en archivos del template ya no es un caso soportado — la fuente de verdad es el template.
+
+### Migration
+
+- **Workspaces 1.1.4 → 1.1.5**: corre `npx workspace-template update`. El updater detectará:
+  1. Skills/rules/scripts upstream cambiados → propondrá sobrescritura global.
+  2. `.claude/settings.json` sin el hook → propondrá agregarlo.
+  3. `CLAUDE.md` con cambios upstream → preguntará antes de regenerar.
+  Acepta los tres prompts y el workspace queda al día.
+- **Si tenías skills/rules del template editados localmente**: esos cambios se perderán al actualizar. Si el cambio era valioso, abre un PR upstream al template; si era un experimento local, copia el archivo con otro nombre antes del update (ej: `cp .claude/skills/apply/SKILL.md .claude/skills/apply-mio/SKILL.md`).
+- **Push mode**: nada que migrar — los work-items existentes empezarán en modo `on-pr` la próxima vez que `/build` los toque, salvo que el dev configure otro modo.
+
+---
+
 ## [1.1.4] — 2026-05-01
 
 Versión centrada en **flujo interactivo correcto y guardrails de granularidad**: `/apply` ya no implementa varias tasks de un tirón ni salta entre work-items, `/build` no agrupa cambios de varias tasks en un solo commit, `/plan` crea **lotes de work-items** con visión completa del trabajo, y se documenta la regla `no-edit-without-plan` como invariante del workspace para evitar ediciones improvisadas en `dev` sin tasks de respaldo. También se introduce **chequeo de ownership multi-dev** para que el equipo pueda tomar piezas distintas del mismo plan sin pisarse.
